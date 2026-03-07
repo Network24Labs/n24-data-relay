@@ -19,6 +19,12 @@ public class TransfersModel : PageModel
 
     public void OnGet()
     {
-        Recent = _tracker.GetRecent(50);
+        var username = User.Identity?.Name;
+        var all = _tracker.GetRecent(100);
+
+        Recent = User.IsInRole("Admin")
+            ? all
+            : all.Where(r => string.Equals(r.UploadedBy, username, StringComparison.OrdinalIgnoreCase))
+                 .ToList();
     }
 }

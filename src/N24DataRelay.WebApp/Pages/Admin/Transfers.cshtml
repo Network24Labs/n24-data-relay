@@ -1,11 +1,11 @@
 @page
-@model TransfersModel
+@model N24DataRelay.WebApp.Pages.Admin.AdminTransfersModel
 @{
-    ViewData["Title"] = "Transfer Status";
+    ViewData["Title"] = "All Transfers";
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">Transfer Status</h4>
+    <h4 class="mb-0"><i class="fa-solid fa-right-left me-2"></i>All Transfers</h4>
     <span id="connectionBadge" class="badge bg-secondary">Connecting…</span>
 </div>
 
@@ -28,7 +28,7 @@
                 {
                     <tr id="row-@r.Id" class="@StatusRowClass(r.Status)">
                         <td>@r.FileName</td>
-                        <td>@r.UploadedBy</td>
+                        <td><small class="text-muted">@r.UploadedBy</small></td>
                         <td><span class="badge @StatusBadgeClass(r.Status)">@r.Status</span></td>
                         <td><small>@r.QueuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</small></td>
                         <td><small>@FormatDuration(r.DurationMs)</small></td>
@@ -40,7 +40,7 @@
         </table>
         @if (!Model.Recent.Any())
         {
-            <p class="text-muted p-3 mb-0">No transfers yet. <a asp-page="/Upload">Upload a file</a> to get started.</p>
+            <p class="text-muted p-3 mb-0">No transfers yet.</p>
         }
     </div>
 </div>
@@ -48,18 +48,18 @@
 @section Scripts {
 <script>
     const statusBadge = {
-        "Queued": "bg-secondary",
+        "Queued":       "bg-secondary",
         "Transferring": "bg-primary",
-        "Completed": "bg-success",
-        "Failed": "bg-danger",
-        "Archived": "bg-info"
+        "Completed":    "bg-success",
+        "Failed":       "bg-danger",
+        "Archived":     "bg-info"
     };
     const rowClass = {
-        "Queued": "",
+        "Queued":       "",
         "Transferring": "table-primary",
-        "Completed": "table-success",
-        "Failed": "table-danger",
-        "Archived": "table-info"
+        "Completed":    "table-success",
+        "Failed":       "table-danger",
+        "Archived":     "table-info"
     };
 
     function formatDuration(ms) {
@@ -70,14 +70,14 @@
     function upsertRow(r) {
         let row = document.getElementById("row-" + r.id);
         const tableBody = document.getElementById("transferBody");
-        const noTransfersMsg = tableBody.closest(".card-body").querySelector("p.text-muted");
-        if (noTransfersMsg) noTransfersMsg.remove();
+        const noMsg = tableBody.closest(".card-body").querySelector("p.text-muted");
+        if (noMsg) noMsg.remove();
 
-        const badge = `<span class="badge ${statusBadge[r.status] || 'bg-secondary'}">${r.status}</span>`;
+        const badge    = `<span class="badge ${statusBadge[r.status] || 'bg-secondary'}">${r.status}</span>`;
         const duration = formatDuration(r.durationMs);
-        const dest = r.destinationPath ? `<small class="text-truncate d-inline-block" style="max-width:200px">${r.destinationPath}</small>` : "";
-        const err = r.errorMessage ? `<small class="text-danger">${r.errorMessage}</small>` : "";
-        const queued = r.queuedAt ? new Date(r.queuedAt).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "";
+        const dest     = r.destinationPath ? `<small class="text-truncate d-inline-block" style="max-width:200px">${r.destinationPath}</small>` : "";
+        const err      = r.errorMessage ? `<small class="text-danger">${r.errorMessage}</small>` : "";
+        const queued   = r.queuedAt ? new Date(r.queuedAt).toLocaleString(undefined, { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }) : "";
 
         if (row) {
             row.className = rowClass[r.status] || "";
@@ -91,7 +91,7 @@
             tr.className = rowClass[r.status] || "";
             tr.innerHTML = `
                 <td>${r.fileName || ""}</td>
-                <td>${r.uploadedBy || ""}</td>
+                <td><small class="text-muted">${r.uploadedBy || ""}</small></td>
                 <td>${badge}</td>
                 <td><small>${queued}</small></td>
                 <td><small>${duration}</small></td>
