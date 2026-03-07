@@ -55,24 +55,48 @@ public class RegisterModel : PageModel
         returnUrl ??= Url.Content("~/");
         if (!_configMonitor.CurrentValue.WebPortal.Authentication.EnableLocalAccounts)
             return RedirectToPage("/Login");
-        if (ModelState.IsValid)
+
+        if (!ModelState.IsValid)
+            return Page();
+
+        var authConfig = _configMonitor.CurrentValue.WebPortal.Authentication;
+        var requireApproval = authConfig.RequireApproval;
+
+        // First registered user is automatically approved and assigned the Admin role,
+        // regardless of the RequireApproval setting.
+        var isFirstUser = !_userManager.Users.Any();
+
+        var user = new ApplicationUser
         {
-            var user = new ApplicationUser
-            {
-                UserName = Input.Email,
-                Email = Input.Email,
-                RegistrationDate = DateTime.UtcNow,
-                IsApproved = !_configMonitor.CurrentValue.WebPortal.Authentication.RequireApproval
-            };
-            var result = await _userManager.CreateAsync(user, Input.Password);
-            if (result.Succeeded)
-            {
-                await _signInManager.SignInAsync(user, isPersistent: false);
-                return LocalRedirect(returnUrl);
-            }
+            UserName = Input.Email,
+            Email = Input.Email,
+            RegistrationDate = DateTime.UtcNow,
+            IsApproved = isFirstUser || !requireApproval
+        };
+
+        var result = await _userManager.CreateAsync(user, Input.Password);
+        if (!result.Succeeded)
+        {
             foreach (var e in result.Errors)
                 ModelState.AddModelError(string.Empty, e.Description);
+            return Page();
         }
-        return Page();
+
+        if (isFirstUser)
+        {
+            await _userManager.AddToRoleAsync(user, "Admin");
+            await _signInManager.SignInAsync(user, isPersistent: false);
+            return LocalRedirect(returnUrl);
+        }
+
+        if (!requireApproval)
+        {
+            await _signInManager.SignInAsync(user, isPersistent: false);
+            return LocalRedirect(returnUrl);
+        }
+
+        // Approval required and not the first user — inform them and send to login page.
+        TempData["InfoMessage"] = "Your account has been created and is awaiting approval by an administrator.";
+        return RedirectToPage("/Login");
     }
 }

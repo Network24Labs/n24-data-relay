@@ -1,8 +1,10 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Identity.Web;
 using N24DataRelay.Core.Constants;
 using N24DataRelay.Core.Interfaces;
 using N24DataRelay.Core.Models;
@@ -20,12 +22,19 @@ public static class ServiceCollectionExtensions
         var sectionName = ApplicationConstants.Configuration.SectionName;
         services.Configure<N24DataRelayConfiguration>(configuration.GetSection(sectionName));
 
-        var connectionString = configuration.GetSection(sectionName).GetSection("WebPortal:Authentication")["ConnectionString"]
-            ?? "Data Source=n24datarelay.db";
+        var authConfig = configuration
+            .GetSection(sectionName)
+            .GetSection("WebPortal:Authentication");
+
+        var connectionString = authConfig["ConnectionString"] ?? "Data Source=n24datarelay.db";
         services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connectionString));
 
-        var maxUploadBytes = configuration.GetSection(sectionName).GetSection("WebPortal").GetValue<long>("MaxFileSizeBytes", 5L * 1024 * 1024 * 1024);
-        services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => options.MultipartBodyLengthLimit = maxUploadBytes);
+        var maxUploadBytes = configuration
+            .GetSection(sectionName)
+            .GetSection("WebPortal")
+            .GetValue<long>("MaxFileSizeBytes", 5L * 1024 * 1024 * 1024);
+        services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(
+            options => options.MultipartBodyLengthLimit = maxUploadBytes);
 
         services.AddIdentity<ApplicationUser, IdentityRole>(options =>
             {
@@ -46,8 +55,30 @@ public static class ServiceCollectionExtensions
             options.AccessDeniedPath = "/AccessDenied";
         });
 
+        // Entra ID (Azure AD) OIDC — wired when EnableEntraId = true in config.
+        // Requires an "AzureAd" section with TenantId, ClientId, and ClientSecret.
+        var enableEntraId = authConfig.GetValue<bool>("EnableEntraId");
+        if (enableEntraId)
+        {
+            services.AddAuthentication()
+                .AddMicrosoftIdentityWebApp(
+                    configuration.GetSection("AzureAd"),
+                    openIdConnectScheme: "MicrosoftIdentity",
+                    cookieScheme: null);
+
+            // Route the OIDC callback through Identity's external login flow
+            // so we can create/link users and apply the approval workflow.
+            services.Configure<OpenIdConnectOptions>("MicrosoftIdentity", opts =>
+                opts.SignInScheme = IdentityConstants.ExternalScheme);
+        }
+
         services.AddScoped<FileUploadService>();
-        services.AddSingleton<ITransferTracker, InMemoryTransferTracker>();
+
+        // SQLite-backed tracker: persists records across restarts (IHostedService for startup load).
+        services.AddSingleton<SqliteTransferTracker>();
+        services.AddSingleton<ITransferTracker>(sp => sp.GetRequiredService<SqliteTransferTracker>());
+        services.AddHostedService(sp => sp.GetRequiredService<SqliteTransferTracker>());
+
         services.AddSignalR().AddJsonProtocol(options =>
             options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         services.AddHostedService<TransferStatusBroadcaster>();

@@ -1,0 +1,172 @@
+@page
+@model N24DataRelay.WebApp.Pages.Admin.UsersModel
+@{
+    ViewData["Title"] = "User Management";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="fa-solid fa-users-gear me-2"></i>User Management</h4>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @Model.StatusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (Model.PendingUsers.Any())
+{
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning text-dark">
+            <i class="fa-solid fa-clock me-2"></i>Pending Approval
+            <span class="badge bg-dark ms-2">@Model.PendingUsers.Count</span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-warning">
+                    <tr>
+                        <th>Email</th>
+                        <th>Registered</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in Model.PendingUsers)
+                    {
+                        <tr>
+                            <td>@u.Email</td>
+                            <td><small>@u.RegistrationDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</small></td>
+                            <td>
+                                <form method="post" asp-page-handler="Approve" class="d-inline">
+                                    <input type="hidden" name="userId" value="@u.Id" />
+                                    <button class="btn btn-sm btn-success me-1" type="submit">
+                                        <i class="fa-solid fa-check me-1"></i>Approve
+                                    </button>
+                                </form>
+                                <form method="post" asp-page-handler="Reject" class="d-inline"
+                                      onsubmit="return confirm('Remove this registration for @u.Email?')">
+                                    <input type="hidden" name="userId" value="@u.Id" />
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">
+                                        <i class="fa-solid fa-xmark me-1"></i>Reject
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+else
+{
+    <div class="alert alert-success mb-4">
+        <i class="fa-solid fa-circle-check me-2"></i>No pending registrations.
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <i class="fa-solid fa-users me-2"></i>All Users
+        <span class="badge bg-secondary ms-2">@Model.AllUsers.Count</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Role</th>
+                    <th>Registered</th>
+                    <th>Approved</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Model.AllUsers)
+                {
+                    <tr class="@(u.IsCurrentUser ? "table-active" : "")">
+                        <td>
+                            @u.Email
+                            @if (u.IsCurrentUser)
+                            {
+                                <span class="badge bg-secondary ms-1">you</span>
+                            }
+                        </td>
+                        <td>
+                            @if (u.IsApproved)
+                            {
+                                <span class="badge bg-success">Approved</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning text-dark">Pending</span>
+                            }
+                        </td>
+                        <td>
+                            @if (u.IsAdmin)
+                            {
+                                <span class="badge bg-primary">Admin</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-light text-dark">User</span>
+                            }
+                        </td>
+                        <td><small>@u.RegistrationDate.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
+                        <td>
+                            @if (u.ApprovedDate.HasValue)
+                            {
+                                <small title="by @u.ApprovedBy">@u.ApprovedDate.Value.ToLocalTime().ToString("yyyy-MM-dd")</small>
+                            }
+                        </td>
+                        <td>
+                            @if (!u.IsCurrentUser)
+                            {
+                                if (!u.IsApproved)
+                                {
+                                    <form method="post" asp-page-handler="Approve" class="d-inline">
+                                        <input type="hidden" name="userId" value="@u.Id" />
+                                        <button class="btn btn-sm btn-success me-1" type="submit" title="Approve">
+                                            <i class="fa-solid fa-check"></i>
+                                        </button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <form method="post" asp-page-handler="Revoke" class="d-inline"
+                                          onsubmit="return confirm('Revoke access for @u.Email?')">
+                                        <input type="hidden" name="userId" value="@u.Id" />
+                                        <button class="btn btn-sm btn-outline-warning me-1" type="submit" title="Revoke access">
+                                            <i class="fa-solid fa-ban"></i>
+                                        </button>
+                                    </form>
+                                }
+                                <form method="post" asp-page-handler="ToggleAdmin" class="d-inline">
+                                    <input type="hidden" name="userId" value="@u.Id" />
+                                    <button class="btn btn-sm @(u.IsAdmin ? "btn-outline-secondary" : "btn-outline-primary") me-1"
+                                            type="submit" title="@(u.IsAdmin ? "Remove Admin" : "Make Admin")">
+                                        <i class="fa-solid @(u.IsAdmin ? "fa-user-minus" : "fa-user-shield")"></i>
+                                    </button>
+                                </form>
+                                <form method="post" asp-page-handler="Reject" class="d-inline"
+                                      onsubmit="return confirm('Delete @u.Email permanently?')">
+                                    <input type="hidden" name="userId" value="@u.Id" />
+                                    <button class="btn btn-sm btn-outline-danger" type="submit" title="Delete user">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!Model.AllUsers.Any())
+        {
+            <p class="text-muted p-3 mb-0">No users registered yet.</p>
+        }
+    </div>
+</div>

@@ -58,8 +58,8 @@ public class ServiceSettings
     public double RetryBackoffMultiplier { get; set; } = 2.0;
     public int MaxConcurrentTransfers { get; set; } = 5;
     public string FileFilter { get; set; } = "*.*";
-    public bool DeleteAfterTransfer { get; set; } = false;
-    public bool ArchiveAfterTransfer { get; set; } = true;
+    public bool DeleteAfterTransfer { get; set; } = true;
+    public bool ArchiveAfterTransfer { get; set; } = false;
     public string ArchiveDirectory { get; set; } = "/var/lib/n24-data-relay/archive";
     public bool VerifyTransfer { get; set; } = true;
     public int FileStabilitySeconds { get; set; } = 5;

@@ -20,6 +20,12 @@
                     {
                         <li class="nav-item"><a class="nav-link" asp-page="/Upload">Upload</a></li>
                         <li class="nav-item"><a class="nav-link" asp-page="/Transfers">Transfers</a></li>
+                        @if (User.IsInRole("Admin"))
+                        {
+                            <li class="nav-item"><a class="nav-link" asp-page="/Admin/Users">
+                                <i class="fa-solid fa-users-gear me-1"></i>Admin
+                            </a></li>
+                        }
                     }
                 </ul>
                 <ul class="navbar-nav">

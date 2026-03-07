@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using N24DataRelay.Core.Constants;
 using N24DataRelay.Watcher;
@@ -5,6 +6,9 @@ using N24DataRelay.WebApp;
 using N24DataRelay.WebApp.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Integrate with systemd (sd-notify ready/stopping signals); no-op outside systemd.
+builder.Host.UseSystemd();
 
 var sharedConfigPath = ApplicationConstants.Configuration.SharedConfigPath;
 if (File.Exists(sharedConfigPath))
@@ -32,7 +36,43 @@ if (app.Environment.IsDevelopment())
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    // EnsureCreated creates all tables for a new database.
+    // For existing databases it is a no-op, so we apply any additive schema changes
+    // below using CREATE TABLE/INDEX IF NOT EXISTS (safe to re-run on every startup).
     db.Database.EnsureCreated();
+
+    // Phase 2: TransferRecords table (added after initial Identity-only schema).
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS "TransferRecords" (
+            "Id"                TEXT NOT NULL CONSTRAINT "PK_TransferRecords" PRIMARY KEY,
+            "FileName"          TEXT NOT NULL,
+            "SourcePath"        TEXT NOT NULL,
+            "UploadedBy"        TEXT NOT NULL,
+            "Status"            TEXT NOT NULL,
+            "QueuedAt"          TEXT NOT NULL,
+            "TransferStartedAt" TEXT,
+            "CompletedAt"       TEXT,
+            "ErrorMessage"      TEXT,
+            "FileSize"          INTEGER,
+            "DestinationPath"   TEXT
+        )
+        """);
+
+    db.Database.ExecuteSqlRaw("""
+        CREATE INDEX IF NOT EXISTS "IX_TransferRecords_QueuedAt"
+        ON "TransferRecords" ("QueuedAt")
+        """);
+
+    db.Database.ExecuteSqlRaw("""
+        CREATE INDEX IF NOT EXISTS "IX_TransferRecords_SourcePath"
+        ON "TransferRecords" ("SourcePath")
+        """);
+
+    // Seed the Admin role so it is available for the first registered user.
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    if (!await roleManager.RoleExistsAsync("Admin"))
+        await roleManager.CreateAsync(new IdentityRole("Admin"));
 }
 
 app.UseWebApp();

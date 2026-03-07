@@ -11,11 +11,16 @@ namespace N24DataRelay.WebApp.Pages;
 public class LoginModel : PageModel
 {
     private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly IOptionsMonitor<N24DataRelayConfiguration> _configMonitor;
 
-    public LoginModel(SignInManager<ApplicationUser> signInManager, IOptionsMonitor<N24DataRelayConfiguration> configMonitor)
+    public LoginModel(
+        SignInManager<ApplicationUser> signInManager,
+        UserManager<ApplicationUser> userManager,
+        IOptionsMonitor<N24DataRelayConfiguration> configMonitor)
     {
         _signInManager = signInManager;
+        _userManager = userManager;
         _configMonitor = configMonitor;
     }
 
@@ -24,6 +29,12 @@ public class LoginModel : PageModel
 
     public string? ReturnUrl { get; set; }
     public string? ErrorMessage { get; set; }
+
+    [TempData]
+    public string? InfoMessage { get; set; }
+
+    public bool EnableEntraId => _configMonitor.CurrentValue.WebPortal.Authentication.EnableEntraId;
+    public bool EnableLocalAccounts => _configMonitor.CurrentValue.WebPortal.Authentication.EnableLocalAccounts;
 
     public class InputModel
     {
@@ -46,21 +57,36 @@ public class LoginModel : PageModel
     public async Task<IActionResult> OnPostAsync(string? returnUrl = null)
     {
         returnUrl ??= Url.Content("~/");
-        if (!_configMonitor.CurrentValue.WebPortal.Authentication.EnableLocalAccounts)
+        if (!EnableLocalAccounts)
         {
             ErrorMessage = "Local account sign-in is not enabled.";
             return Page();
         }
-        if (ModelState.IsValid)
+
+        if (!ModelState.IsValid)
+            return Page();
+
+        var result = await _signInManager.PasswordSignInAsync(
+            Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: true);
+
+        if (result.Succeeded)
         {
-            var result = await _signInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: true);
-            if (result.Succeeded)
-                return LocalRedirect(returnUrl);
-            if (result.IsLockedOut)
-                ErrorMessage = "Account locked. Try again later.";
-            else
-                ErrorMessage = "Invalid email or password.";
+            // Enforce the approval gate — sign out immediately if not yet approved.
+            var user = await _userManager.FindByEmailAsync(Input.Email);
+            if (user != null && !user.IsApproved)
+            {
+                await _signInManager.SignOutAsync();
+                ErrorMessage = "Your account is pending approval by an administrator.";
+                return Page();
+            }
+            return LocalRedirect(returnUrl);
         }
+
+        if (result.IsLockedOut)
+            ErrorMessage = "Account locked. Try again later.";
+        else
+            ErrorMessage = "Invalid email or password.";
+
         return Page();
     }
 }

@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.3" />
     <ProjectReference Include="..\N24DataRelay.Core\N24DataRelay.Core.csproj" />
     <ProjectReference Include="..\N24DataRelay.Watcher\N24DataRelay.Watcher.csproj" />
     <ProjectReference Include="..\N24DataRelay.WebApp\N24DataRelay.WebApp.csproj" />

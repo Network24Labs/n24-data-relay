@@ -1,5 +1,5 @@
 # N24 Data Relay — single service (WebApp + Watcher)
-# Copy to /etc/systemd/system/ and adjust paths.
+# Copy to /etc/systemd/system/ and adjust WorkingDirectory / ExecStart to your install path.
 # After install: systemctl daemon-reload && systemctl enable --now n24-data-relay
 
 [Unit]
@@ -9,13 +9,13 @@ Wants=network-online.target
 
 [Service]
 Type=notify
-# WorkingDirectory and ExecStart to be set by packaging (e.g. /opt/n24-data-relay and the host executable).
-# WorkingDirectory=/opt/n24-data-relay
-# ExecStart=/usr/bin/dotnet /opt/n24-data-relay/N24DataRelay.dll
+WorkingDirectory=/opt/n24-data-relay
+ExecStart=/usr/bin/dotnet /opt/n24-data-relay/N24DataRelay.dll
 Restart=on-failure
 RestartSec=10
-# User=n24-data-relay
-# Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=0
+User=n24-data-relay
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=0
+Environment=ASPNETCORE_ENVIRONMENT=Production
 
 [Install]
 WantedBy=multi-user.target

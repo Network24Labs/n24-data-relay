@@ -240,7 +240,16 @@ public sealed class TransferWorker : BackgroundService
                     }
                     else if (_config.Service.DeleteAfterTransfer)
                     {
-                        try { File.Delete(filePath); } catch (Exception ex) { _logger.LogWarning(ex, "Could not delete after transfer: {Path}", filePath); }
+                        try
+                        {
+                            File.Delete(filePath);
+                            // Remove the per-user subdirectory if it is now empty.
+                            var dir = Path.GetDirectoryName(filePath);
+                            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)
+                                && !Directory.EnumerateFileSystemEntries(dir).Any())
+                                Directory.Delete(dir);
+                        }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Could not delete after transfer: {Path}", filePath); }
                     }
                 }
                 else if (result != null)

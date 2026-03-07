@@ -20,6 +20,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Identity.Web" Version="4.5.0" />
     <ProjectReference Include="..\N24DataRelay.Core\N24DataRelay.Core.csproj" />
   </ItemGroup>
 
