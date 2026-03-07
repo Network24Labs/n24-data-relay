@@ -32,7 +32,7 @@
                         <td><span class="badge @StatusBadgeClass(r.Status)">@r.Status</span></td>
                         <td><small>@r.QueuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</small></td>
                         <td><small>@FormatDuration(r.DurationMs)</small></td>
-                        <td><small class="text-truncate d-inline-block" style="max-width:200px">@r.DestinationPath</small></td>
+                        <td>@if (r.DestinationPath != null) { <span class="badge bg-info text-dark">SCADA</span> }</td>
                         <td><small class="text-danger">@r.ErrorMessage</small></td>
                     </tr>
                 }
@@ -75,7 +75,7 @@
 
         const badge = `<span class="badge ${statusBadge[r.status] || 'bg-secondary'}">${r.status}</span>`;
         const duration = formatDuration(r.durationMs);
-        const dest = r.destinationPath ? `<small class="text-truncate d-inline-block" style="max-width:200px">${r.destinationPath}</small>` : "";
+        const dest = r.destinationPath ? `<span class="badge bg-info text-dark">SCADA</span>` : "";
         const err = r.errorMessage ? `<small class="text-danger">${r.errorMessage}</small>` : "";
         const queued = r.queuedAt ? new Date(r.queuedAt).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "";
 

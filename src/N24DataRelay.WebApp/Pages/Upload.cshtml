@@ -119,7 +119,7 @@ function updateTransferRow(record) {
         case "Archived": {
             icon.className = "fa-solid fa-circle-check";
             small.className = "text-success";
-            const dest = record.destinationPath ? ` → ${record.destinationPath}` : "";
+            const dest = record.destinationPath ? " → SCADA" : "";
             const dur = fmtMs(record.durationMs);
             text.textContent = ` Transfer complete${dest}${dur ? " (" + dur + ")" : ""}`;
             listItem?.classList.add("list-group-item-success");
