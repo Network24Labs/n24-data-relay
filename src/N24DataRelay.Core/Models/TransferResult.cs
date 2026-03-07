@@ -17,4 +17,5 @@ public class TransferResult
     public string TransferMethod { get; set; } = string.Empty;
     public bool Verified { get; set; }
     public string? Checksum { get; set; }
+    public string? RemoteHost { get; set; }
 }

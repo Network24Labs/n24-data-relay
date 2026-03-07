@@ -26,4 +26,12 @@ public class TransferStatusRecord
     public long? DurationMs => CompletedAt.HasValue && TransferStartedAt.HasValue
         ? (long)(CompletedAt.Value - TransferStartedAt.Value).TotalMilliseconds
         : null;
+
+    // Phase 3 observability fields
+    public int RetryCount { get; set; }
+    public double? ThroughputBytesPerSec { get; set; }
+    public bool Verified { get; set; }
+    public string? ErrorDetails { get; set; }
+    public string? TransferMethod { get; set; }
+    public string? RemoteHost { get; set; }
 }

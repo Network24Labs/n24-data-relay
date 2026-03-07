@@ -83,7 +83,8 @@ public sealed class SqliteTransferTracker : ITransferTracker, IHostedService
         return record;
     }
 
-    public void UpdateStatus(string id, TransferStatus status, string? errorMessage = null, string? destinationPath = null)
+    public void UpdateStatus(string id, TransferStatus status, string? errorMessage = null, string? destinationPath = null,
+        N24DataRelay.Core.Models.TransferResult? result = null)
     {
         if (!_records.TryGetValue(id, out var record)) return;
 
@@ -95,6 +96,18 @@ public sealed class SqliteTransferTracker : ITransferTracker, IHostedService
             record.TransferStartedAt = DateTime.UtcNow;
         else if (status is TransferStatus.Completed or TransferStatus.Failed or TransferStatus.Archived)
             record.CompletedAt = DateTime.UtcNow;
+
+        if (result != null)
+        {
+            record.RetryCount = result.RetryCount;
+            record.Verified = result.Verified;
+            record.ErrorDetails = result.ErrorDetails;
+            record.TransferMethod = result.TransferMethod;
+            record.RemoteHost = result.RemoteHost;
+
+            if (result.FileSize > 0 && result.Duration.HasValue && result.Duration.Value.TotalMilliseconds > 0)
+                record.ThroughputBytesPerSec = result.FileSize / result.Duration.Value.TotalMilliseconds * 1000.0;
+        }
 
         _writeQueue.Writer.TryWrite(record);
         StatusChanged?.Invoke(this, record);
@@ -138,6 +151,12 @@ public sealed class SqliteTransferTracker : ITransferTracker, IHostedService
                     existing.TransferStartedAt = snapshot.TransferStartedAt;
                     existing.CompletedAt = snapshot.CompletedAt;
                     existing.FileSize = snapshot.FileSize;
+                    existing.RetryCount = snapshot.RetryCount;
+                    existing.ThroughputBytesPerSec = snapshot.ThroughputBytesPerSec;
+                    existing.Verified = snapshot.Verified;
+                    existing.ErrorDetails = snapshot.ErrorDetails;
+                    existing.TransferMethod = snapshot.TransferMethod;
+                    existing.RemoteHost = snapshot.RemoteHost;
                 }
 
                 await db.SaveChangesAsync(ct);

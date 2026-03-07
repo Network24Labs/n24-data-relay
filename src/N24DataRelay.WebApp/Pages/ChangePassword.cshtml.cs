@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using N24DataRelay.WebApp.Data;
+using N24DataRelay.WebApp.Services;
 
 namespace N24DataRelay.WebApp.Pages;
 
@@ -12,13 +13,16 @@ public class ChangePasswordModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly IAuditLogger _audit;
 
     public ChangePasswordModel(
         UserManager<ApplicationUser> userManager,
-        SignInManager<ApplicationUser> signInManager)
+        SignInManager<ApplicationUser> signInManager,
+        IAuditLogger audit)
     {
         _userManager = userManager;
         _signInManager = signInManager;
+        _audit = audit;
     }
 
     [BindProperty]
@@ -81,6 +85,10 @@ public class ChangePasswordModel : PageModel
         user.PasswordLastChangedAt = DateTime.UtcNow;
         user.MustChangePassword = false;
         await _userManager.UpdateAsync(user);
+
+        _audit.Log(AuditEventTypes.PasswordChanged, user.Email, subject: user.Email,
+            details: new { forced },
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
 
         // Refresh the auth cookie so the session stays valid after the password change
         await _signInManager.RefreshSignInAsync(user);

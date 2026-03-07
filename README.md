@@ -8,7 +8,7 @@ N24 Data Relay is the Linux-focused evolution of the file relay concept: a web u
 
 See [docs/](docs/) for architecture, setup, configuration, and migration from ZL File Relay.
 
-**Status:** Phase 2 — production-ready feature set. Core transfer pipeline, web portal, admin UI, transfer status persistence, systemd integration, and Entra ID authentication are fully implemented.
+**Status:** Phase 3 — observability, monitoring API, SMB, and failure notifications implemented. `.deb` packaging deferred pending explicit sign-off.
 
 ## Quick Start (Development)
 
@@ -27,14 +27,34 @@ dotnet run
 | Feature | Status |
 |---|---|
 | SSH/SCP file transfer (SSH.NET) | Done |
+| SMB transfer (mount-point copy) | Done |
 | Web upload portal (Razor Pages + Bootstrap) | Done |
 | Real-time transfer status (SignalR) | Done |
 | Local account auth (ASP.NET Core Identity) | Done |
+| Password expiry + forced reset + email reset | Done |
 | Entra ID (Azure AD) OIDC auth | Done |
+| Managed Identity (Azure Arc) option | Done |
 | User approval workflow + Admin UI | Done |
 | Transfer record persistence (SQLite) | Done |
+| Transfer metrics: throughput, retries, verify | Done |
+| Audit log (SQLite) — logins, config changes, etc. | Done |
+| Admin Dashboard (stats, audit feed, service health) | Done |
+| Monitoring API (`/api/v1/transfers`, `/api/v1/audit`, `/api/v1/health`) | Done |
+| Transfer failure email notifications | Done |
+| Config hot-reload (IOptionsMonitor) | Done |
+| SMTP email (MailKit) with test-send UI | Done |
 | systemd sd-notify integration | Done |
 | Fake-OT Docker test target | Done |
-| SMB transfer | Planned (Phase 3) |
-| `.deb` packaging | Planned (Phase 3) |
-| Config hot-reload | Planned (Phase 3) |
+| `.deb` packaging | Deferred |
+
+## Monitoring API
+
+The `/api/v1` endpoints allow external tools (LogScale, Grafana, custom scripts) to poll for data without parsing log files.
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /api/v1/health` | None | Service heartbeat, queue depth, last transfer time |
+| `GET /api/v1/transfers?since=<ISO8601>&limit=500` | Bearer API key | Transfer records with metrics |
+| `GET /api/v1/audit?since=<ISO8601>&limit=500` | Bearer API key | Audit events |
+
+Configure the API key in **Admin → Settings → Portal → Monitoring API Key** or via the `N24DataRelay__WebPortal__Authentication__ApiKey` environment variable.

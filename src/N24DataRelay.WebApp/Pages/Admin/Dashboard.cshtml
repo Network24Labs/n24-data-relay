@@ -1,0 +1,227 @@
+@page
+@model N24DataRelay.WebApp.Pages.Admin.DashboardModel
+@{
+    ViewData["Title"] = "Dashboard";
+
+    static string FormatBytes(long? bytes)
+    {
+        if (!bytes.HasValue || bytes == 0) return "0 B";
+        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+        var order = 0;
+        double d = bytes.Value;
+        while (d >= 1024 && order < suffixes.Length - 1) { order++; d /= 1024; }
+        return $"{d:0.##} {suffixes[order]}";
+    }
+
+    static string FormatThroughput(double? bps)
+    {
+        if (!bps.HasValue || bps <= 0) return "—";
+        return bps >= 1_000_000
+            ? $"{bps / 1_000_000:0.#} MB/s"
+            : bps >= 1_000
+                ? $"{bps / 1_000:0.#} KB/s"
+                : $"{bps:0} B/s";
+    }
+}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h2 class="mb-0"><i class="fa-solid fa-gauge-high me-2 text-primary"></i>Dashboard</h2>
+    <small class="text-muted">Data from today (UTC) unless otherwise noted</small>
+</div>
+
+@* ── Stats cards ──────────────────────────────────────────────────────────── *@
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold text-primary">@Model.TodayCount</div>
+                <div class="text-muted small">Transfers today</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold text-info">@FormatBytes(Model.TodayBytes)</div>
+                <div class="text-muted small">Data transferred today</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                @{
+                    var rateClass = Model.SuccessRate >= 95 ? "text-success" : Model.SuccessRate >= 80 ? "text-warning" : "text-danger";
+                }
+                <div class="fs-1 fw-bold @rateClass">@Model.SuccessRate%</div>
+                <div class="text-muted small">Success rate</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold text-secondary">@FormatThroughput(Model.AvgThroughput)</div>
+                <div class="text-muted small">Avg throughput (today)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ── Service health ────────────────────────────────────────────────────────── *@
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header fw-semibold"><i class="fa-solid fa-heart-pulse me-2"></i>Service Health</div>
+            <div class="card-body">
+                <div class="row g-3 text-center">
+                    <div class="col-md-4">
+                        <div class="text-muted small mb-1">Queue depth</div>
+                        <div class="fw-bold fs-5 @(Model.QueueDepth > 0 ? "text-warning" : "text-success")">
+                            @Model.QueueDepth
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small mb-1">Last file detected</div>
+                        <div class="fw-bold">
+                            @(Model.LastFileDetected.HasValue
+                                ? Model.LastFileDetected.Value.ToString("yyyy-MM-dd HH:mm:ss") + " UTC"
+                                : "—")
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small mb-1">Last successful transfer</div>
+                        <div class="fw-bold @(Model.LastSuccess.HasValue ? "text-success" : "text-muted")">
+                            @(Model.LastSuccess.HasValue
+                                ? Model.LastSuccess.Value.ToString("yyyy-MM-dd HH:mm:ss") + " UTC"
+                                : "—")
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    @* ── Recent transfers ────────────────────────────────────────────────────── *@
+    <div class="col-12 col-xl-8">
+        <div class="card h-100">
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                <span><i class="fa-solid fa-arrow-right-arrow-left me-2"></i>Recent Transfers</span>
+                <a asp-page="/Admin/Transfers" class="btn btn-sm btn-outline-secondary">View all</a>
+            </div>
+            <div class="card-body p-0">
+                @if (!Model.RecentTransfers.Any())
+                {
+                    <p class="text-muted p-3 mb-0">No transfer records found.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>File</th>
+                                    <th>Status</th>
+                                    <th>Size</th>
+                                    <th>Throughput</th>
+                                    <th title="Retries">&#8635;</th>
+                                    <th>Queued</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var t in Model.RecentTransfers)
+                                {
+                                    var statusClass = t.Status switch
+                                    {
+                                        "Completed" => "bg-success",
+                                        "Failed"    => "bg-danger",
+                                        "Transferring" => "bg-primary",
+                                        "Archived"  => "bg-secondary",
+                                        _           => "bg-warning text-dark"
+                                    };
+                                    <tr class="@(t.Status == "Failed" ? "table-danger" : "")">
+                                        <td class="text-truncate" style="max-width:180px" title="@t.FileName">
+                                            @t.FileName
+                                            @if (t.Verified)
+                                            {
+                                                <i class="fa-solid fa-circle-check text-success ms-1" title="Verified"></i>
+                                            }
+                                        </td>
+                                        <td><span class="badge @statusClass">@t.Status</span></td>
+                                        <td class="text-nowrap">@FormatBytes(t.FileSize)</td>
+                                        <td class="text-nowrap">@FormatThroughput(t.ThroughputBytesPerSec)</td>
+                                        <td>@(t.RetryCount > 0 ? t.RetryCount.ToString() : "—")</td>
+                                        <td class="text-nowrap small text-muted">@t.QueuedAt.ToString("MM-dd HH:mm")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* ── Audit feed ──────────────────────────────────────────────────────────── *@
+    <div class="col-12 col-xl-4">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">
+                <i class="fa-solid fa-shield-halved me-2"></i>Audit Log
+            </div>
+            <div class="card-body p-0">
+                @if (!Model.RecentAudit.Any())
+                {
+                    <p class="text-muted p-3 mb-0">No audit events found.</p>
+                }
+                else
+                {
+                    <ul class="list-group list-group-flush">
+                        @foreach (var a in Model.RecentAudit)
+                        {
+                            var iconClass = a.EventType switch
+                            {
+                                "UserLogin"              => "fa-right-to-bracket text-success",
+                                "UserLoginFailed"        => "fa-triangle-exclamation text-danger",
+                                "UserLogout"             => "fa-right-from-bracket text-secondary",
+                                "UserRegistered"         => "fa-user-plus text-info",
+                                "UserApproved"           => "fa-user-check text-success",
+                                "UserRejected" or
+                                "UserRevoked" or
+                                "UserDeleted"            => "fa-user-xmark text-danger",
+                                "RoleGranted"            => "fa-user-shield text-primary",
+                                "RoleRevoked"            => "fa-user-slash text-warning",
+                                "PasswordChanged" or
+                                "PasswordResetRequested" or
+                                "PasswordReset"          => "fa-key text-warning",
+                                "ConfigSaved"            => "fa-gear text-secondary",
+                                "TransferFailed"         => "fa-circle-xmark text-danger",
+                                "ServiceStarted"         => "fa-play text-success",
+                                "ServiceStopped"         => "fa-stop text-warning",
+                                _                        => "fa-circle-dot text-muted"
+                            };
+                            <li class="list-group-item px-3 py-2">
+                                <div class="d-flex align-items-start gap-2">
+                                    <i class="fa-solid @iconClass mt-1 flex-shrink-0" style="width:16px"></i>
+                                    <div class="overflow-hidden">
+                                        <div class="fw-semibold small">@a.EventType</div>
+                                        @if (!string.IsNullOrEmpty(a.Actor))
+                                        {
+                                            <div class="text-truncate small text-muted" title="@a.Actor">@a.Actor</div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(a.Subject) && a.Subject != a.Actor)
+                                        {
+                                            <div class="text-truncate small text-muted" title="@a.Subject">&#8594; @a.Subject</div>
+                                        }
+                                        <div class="small text-muted">@a.Timestamp.ToString("MM-dd HH:mm:ss") UTC</div>
+                                    </div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+</div>

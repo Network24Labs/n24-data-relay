@@ -32,7 +32,8 @@ public sealed class ScpFileTransferService : IFileTransferService
             SourcePath = sourceFilePath,
             FileName = Path.GetFileName(sourceFilePath),
             StartTime = DateTime.UtcNow,
-            TransferMethod = GetTransferMethod()
+            TransferMethod = GetTransferMethod(),
+            RemoteHost = _config.Transfer.Ssh.Host
         };
 
         try

@@ -11,6 +11,7 @@ public static class ApplicationBuilderExtensions
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapRazorPages();
+        app.MapControllers();
         app.MapHub<TransferHub>("/hubs/transfer");
         app.MapGet("/", () => Results.Redirect("/Index"));
         return app;

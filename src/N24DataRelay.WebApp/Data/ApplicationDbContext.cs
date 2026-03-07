@@ -14,6 +14,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     }
 
     public DbSet<TransferRecord> TransferRecords { get; set; } = null!;
+    public DbSet<AuditEvent> AuditEvents { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -24,6 +25,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.HasKey(r => r.Id);
             e.HasIndex(r => r.QueuedAt);
             e.HasIndex(r => r.SourcePath);
+        });
+
+        builder.Entity<AuditEvent>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.HasIndex(a => a.Timestamp);
+            e.HasIndex(a => a.EventType);
         });
     }
 }
@@ -59,6 +67,14 @@ public class TransferRecord
     public long? FileSize { get; set; }
     public string? DestinationPath { get; set; }
 
+    // Phase 3 observability columns
+    public int RetryCount { get; set; }
+    public double? ThroughputBytesPerSec { get; set; }
+    public bool Verified { get; set; }
+    public string? ErrorDetails { get; set; }
+    public string? TransferMethod { get; set; }
+    public string? RemoteHost { get; set; }
+
     public TransferStatusRecord ToStatusRecord() => new()
     {
         Id = Id,
@@ -71,7 +87,13 @@ public class TransferRecord
         TransferStartedAt = TransferStartedAt,
         CompletedAt = CompletedAt,
         ErrorMessage = ErrorMessage,
-        DestinationPath = DestinationPath
+        DestinationPath = DestinationPath,
+        RetryCount = RetryCount,
+        ThroughputBytesPerSec = ThroughputBytesPerSec,
+        Verified = Verified,
+        ErrorDetails = ErrorDetails,
+        TransferMethod = TransferMethod,
+        RemoteHost = RemoteHost
     };
 
     public static TransferRecord FromStatusRecord(TransferStatusRecord r) => new()
@@ -86,6 +108,30 @@ public class TransferRecord
         TransferStartedAt = r.TransferStartedAt,
         CompletedAt = r.CompletedAt,
         ErrorMessage = r.ErrorMessage,
-        DestinationPath = r.DestinationPath
+        DestinationPath = r.DestinationPath,
+        RetryCount = r.RetryCount,
+        ThroughputBytesPerSec = r.ThroughputBytesPerSec,
+        Verified = r.Verified,
+        ErrorDetails = r.ErrorDetails,
+        TransferMethod = r.TransferMethod,
+        RemoteHost = r.RemoteHost
     };
 }
+
+/// <summary>Persisted audit event record for security and operational observability.</summary>
+public class AuditEvent
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    /// <summary>Category constant — see <see cref="AuditEventTypes"/>.</summary>
+    public string EventType { get; set; } = string.Empty;
+    /// <summary>Email address or "system" for the actor who triggered the event.</summary>
+    public string? Actor { get; set; }
+    /// <summary>Target entity: email address, filename, config section, etc.</summary>
+    public string? Subject { get; set; }
+    /// <summary>Optional JSON blob with extra context specific to the event type.</summary>
+    public string? Details { get; set; }
+    public string? IpAddress { get; set; }
+}
+

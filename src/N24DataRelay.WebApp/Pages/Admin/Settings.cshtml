@@ -24,19 +24,35 @@
 
 @* ── Config health bar ───────────────────────────────────────────────────── *@
 @{
-    var sshOk = !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.Host) && !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.Username);
+    var transferMethod = (Model.Config.Service.TransferMethod ?? "ssh").ToLowerInvariant();
+    var sshOk   = !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.Host)
+               && !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.Username);
+    var keyOk   = Model.Config.Transfer.Ssh.AuthMethod != "PublicKey"
+               || !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.PrivateKeyPath);
+    var smbOk   = !string.IsNullOrWhiteSpace(Model.Config.Transfer.Smb.SharePath);
     var watchOk = !string.IsNullOrWhiteSpace(Model.Config.Service.WatchDirectory);
-    var keyOk = Model.Config.Transfer.Ssh.AuthMethod != "PublicKey" || !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.PrivateKeyPath);
 }
 <div class="d-flex flex-wrap gap-2 mb-4">
-    <span class="badge @(sshOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
-        <i class="fa-solid fa-@(sshOk ? "check" : "triangle-exclamation") me-1"></i>SSH host @(sshOk ? "configured" : "not set")
-    </span>
-    <span class="badge @(keyOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
-        <i class="fa-solid fa-@(keyOk ? "check" : "triangle-exclamation") me-1"></i>SSH key @(keyOk ? "set" : "not set")
-    </span>
+    @if (transferMethod == "smb")
+    {
+        <span class="badge @(smbOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
+            <i class="fa-solid fa-@(smbOk ? "check" : "triangle-exclamation") me-1"></i>SMB share @(smbOk ? "configured" : "not set")
+        </span>
+    }
+    else
+    {
+        <span class="badge @(sshOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
+            <i class="fa-solid fa-@(sshOk ? "check" : "triangle-exclamation") me-1"></i>SSH host @(sshOk ? "configured" : "not set")
+        </span>
+        <span class="badge @(keyOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
+            <i class="fa-solid fa-@(keyOk ? "check" : "triangle-exclamation") me-1"></i>SSH key @(keyOk ? "set" : "not set")
+        </span>
+    }
     <span class="badge @(watchOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
         <i class="fa-solid fa-@(watchOk ? "check" : "triangle-exclamation") me-1"></i>Watch directory @(watchOk ? "configured" : "not set")
+    </span>
+    <span class="badge bg-secondary fs-6 fw-normal py-2 px-3">
+        <i class="fa-solid fa-arrow-right-arrow-left me-1"></i>Method: @transferMethod.ToUpperInvariant()
     </span>
 </div>
 
@@ -44,7 +60,12 @@
 <ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
     <li class="nav-item">
         <a class="nav-link @(activeTab == "ssh" ? "active" : "")" href="#ssh" data-bs-toggle="tab" role="tab">
-            <i class="fa-solid fa-terminal me-1"></i>SSH / Transfer Target
+            <i class="fa-solid fa-terminal me-1"></i>SSH Target
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "smb" ? "active" : "")" href="#smb" data-bs-toggle="tab" role="tab">
+            <i class="fa-solid fa-folder-open me-1"></i>SMB Target
         </a>
     </li>
     <li class="nav-item">
@@ -162,7 +183,13 @@
                         </div>
                     </div>
                 </div>
-                <div class="card-footer text-end">
+                <div class="card-footer d-flex justify-content-between align-items-center gap-2">
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="testConnection(this)"
+                            data-handler="TestConnection"
+                            title="Tests connectivity using the currently saved SSH settings">
+                        <i class="fa-solid fa-plug me-1"></i>Test Connection
+                    </button>
                     <button type="submit" class="btn btn-primary">
                         <i class="fa-solid fa-floppy-disk me-1"></i>Save SSH Settings
                     </button>
@@ -171,7 +198,90 @@
         </form>
     </div>
 
-    @* ══ Tab 2: Transfer Service ══════════════════════════════════════════════ *@
+    @* ══ Tab 2: SMB ═══════════════════════════════════════════════════════════ *@
+    <div class="tab-pane fade @(activeTab == "smb" ? "show active" : "")" id="smb" role="tabpanel">
+        <form method="post" asp-page-handler="SaveSmb">
+            <div class="card">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-server me-2"></i>SCADA Transfer Target — SMB Share</div>
+                <div class="card-body row g-3">
+
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 mb-0 small">
+                            <i class="fa-solid fa-circle-info me-1"></i>
+                            The SMB share must be <strong>mounted on this server</strong> before the service starts.
+                            Use <code>/etc/fstab</code> or a systemd mount unit with a <code>cifs</code> type.
+                            N24 Data Relay copies files to the mount point using standard file I/O — no SMB library required.
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="Smb.Server" class="form-label">Server / UNC Host</label>
+                        <input asp-for="Smb.Server" class="form-control font-monospace"
+                               placeholder="192.168.10.50 or scada.internal" />
+                        <div class="form-text">Informational only — used in transfer records and audit log.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Smb.SharePath" class="form-label">Local Mount Path <span class="text-danger">*</span></label>
+                        <input asp-for="Smb.SharePath" class="form-control font-monospace"
+                               placeholder="/mnt/scada-share" />
+                        <div class="form-text">The local directory where the CIFS share is mounted.</div>
+                        <span asp-validation-for="Smb.SharePath" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label asp-for="Smb.Timeout" class="form-label">Copy Timeout (s)</label>
+                        <input asp-for="Smb.Timeout" type="number" class="form-control" min="30" max="3600" />
+                        <span asp-validation-for="Smb.Timeout" class="text-danger small"></span>
+                    </div>
+
+                    @* ── CIFS credentials hint ────────────────────────────── *@
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Smb.UseCredentials" id="smbCredsToggle" />
+                            <label class="form-check-label" asp-for="Smb.UseCredentials">
+                                Share requires credentials (CIFS)
+                            </label>
+                        </div>
+                    </div>
+                    <div id="smbCredFields" class="col-12 row g-3 mx-0 px-0">
+                        <div class="col-md-5">
+                            <label asp-for="Smb.Username" class="form-label">Domain Username</label>
+                            <input asp-for="Smb.Username" class="form-control font-monospace"
+                                   placeholder="DOMAIN\relay or relay@domain.local" autocomplete="off" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="Smb.Domain" class="form-label">Domain</label>
+                            <input asp-for="Smb.Domain" class="form-control font-monospace"
+                                   placeholder="DOMAIN" autocomplete="off" />
+                            <div class="form-text">Optional if embedded in username.</div>
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-secondary py-2 mb-0 small">
+                                <i class="fa-solid fa-circle-info me-1"></i>
+                                CIFS passwords are not stored here. Add a credentials file to
+                                <code>/etc/n24-data-relay/smb-credentials</code> (mode <code>600</code>) and reference it in
+                                <code>/etc/fstab</code>:
+                                <pre class="mt-2 mb-0 bg-body-tertiary rounded p-2">//server/share  /mnt/scada-share  cifs  credentials=/etc/n24-data-relay/smb-credentials,uid=n24relay,gid=n24relay,vers=3.0  0  0</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center gap-2">
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="testConnection(this)"
+                            data-handler="TestConnection"
+                            title="Tests whether the configured mount path exists and is accessible">
+                        <i class="fa-solid fa-plug me-1"></i>Test Connection
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk me-1"></i>Save SMB Settings
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    @* ══ Tab 3: Transfer Service ══════════════════════════════════════════════ *@
     <div class="tab-pane fade @(activeTab == "service" ? "show active" : "")" id="service" role="tabpanel">
         <form method="post" asp-page-handler="SaveService">
             <div class="card mb-4">
@@ -243,6 +353,33 @@
                         <input asp-for="Service.ProcessingIntervalSeconds" type="number" class="form-control" min="5" max="300" />
                         <span asp-validation-for="Service.ProcessingIntervalSeconds" class="text-danger small"></span>
                     </div>
+                    <div class="col-md-4">
+                        <label asp-for="Service.MaxConcurrentTransfers" class="form-label">Max Concurrent Transfers</label>
+                        <input asp-for="Service.MaxConcurrentTransfers" type="number" class="form-control" min="1" max="50" />
+                        <div class="form-text">Parallel transfers per processing cycle.</div>
+                        <span asp-validation-for="Service.MaxConcurrentTransfers" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Service.MaxQueueSize" class="form-label">Max Queue Size</label>
+                        <input asp-for="Service.MaxQueueSize" type="number" class="form-control" min="10" max="100000" />
+                        <div class="form-text">New files are dropped if the queue exceeds this limit.</div>
+                        <span asp-validation-for="Service.MaxQueueSize" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Service.FileFilter" class="form-label">File Filter</label>
+                        <input asp-for="Service.FileFilter" class="form-control font-monospace" placeholder="*.*" />
+                        <div class="form-text">
+                            Controls which files in the watch directory trigger a transfer.
+                            Uses a single <strong>FileSystemWatcher</strong> pattern — <code>*</code> matches any characters,
+                            <code>?</code> matches one character.<br />
+                            Examples: <code>*.*</code> (all files), <code>*.csv</code> (CSV only),
+                            <code>*.dat</code>, <code>report_???.xlsx</code>.<br />
+                            <span class="text-warning-emphasis">Only one pattern is supported. To restrict multiple file types, use
+                            <code>*.*</code> here and configure the <strong>Blocked File Extensions</strong> list on the
+                            <a href="#portal" data-bs-toggle="tab">Web Portal tab</a> — uploads of disallowed extensions
+                            are rejected before they reach the watch directory.</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="text-end">
@@ -253,7 +390,7 @@
         </form>
     </div>
 
-    @* ══ Tab 3: Web Portal ════════════════════════════════════════════════════ *@
+    @* ══ Tab 4: Web Portal ═══════════════════════════════════════════════════ *@
     <div class="tab-pane fade @(activeTab == "portal" ? "show active" : "")" id="portal" role="tabpanel">
         <form method="post" asp-page-handler="SavePortal">
             <div class="card mb-4">
@@ -529,6 +666,142 @@
                 </div>
             </div>
 
+            @* ── Monitoring API card ──────────────────────────────────────────── *@
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">
+                    <i class="fa-solid fa-plug me-2"></i>Monitoring API Key
+                </div>
+                <div class="card-body row g-3">
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 mb-0 small">
+                            <i class="fa-solid fa-circle-info me-1"></i>
+                            The monitoring API (<code>/api/v1/transfers</code>, <code>/api/v1/audit</code>)
+                            requires a <strong>Bearer</strong> token in the <code>Authorization</code> header.
+                            Leave blank to keep the current key. Prefer setting via the
+                            <code>N24DataRelay__WebPortal__Authentication__ApiKey</code> environment variable.
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <label asp-for="Portal.ApiKey" class="form-label">API Key</label>
+                        <div class="input-group">
+                            <input asp-for="Portal.ApiKey" type="password" class="form-control font-monospace"
+                                   placeholder="Leave blank to keep existing key"
+                                   autocomplete="new-password" id="apiKeyInput" />
+                            <button class="btn btn-outline-secondary" type="button" id="toggleApiKey" title="Show/hide">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            Current status:
+                            @{
+                                var apiKeyStatus = string.IsNullOrWhiteSpace(Model.Config.WebPortal.Authentication.ApiKey) ? "not set" : "configured";
+                                var apiKeyBadge = apiKeyStatus == "not set" ? "bg-warning text-dark" : "bg-success";
+                            }
+                            <span class="badge @apiKeyBadge">@apiKeyStatus</span>
+                            &mdash; Use a long random string (32+ chars).
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Monitoring Integrations (read-only reference card) ───────────── *@
+            @{
+                var apiBaseUrl = Model.ApiBaseUrl;
+                var hasApiKey  = !string.IsNullOrWhiteSpace(Model.Config.WebPortal.Authentication.ApiKey);
+                var apiKeyPlaceholder = hasApiKey ? "YOUR_API_KEY_HERE" : "<set an API key above first>";
+
+                var logscaleYaml = $@"# LogScale / Falcon Next-Gen SIEM — Collector configuration
+# Place in: /etc/humio-log-collector/config.yaml
+dataDirectory: /var/lib/humio-log-collector/data
+
+sources:
+  n24-transfers:
+    type: http-poll
+    url: {apiBaseUrl}/transfers?limit=500
+    headers:
+      Authorization: ""Bearer {apiKeyPlaceholder}""
+    interval: 60s
+    parser: json
+    repository: YOUR_REPOSITORY
+
+  n24-audit:
+    type: http-poll
+    url: {apiBaseUrl}/audit?limit=500
+    headers:
+      Authorization: ""Bearer {apiKeyPlaceholder}""
+    interval: 60s
+    parser: json
+    repository: YOUR_REPOSITORY";
+            }
+            <div class="card mb-4 border-0 bg-light">
+                <div class="card-header fw-semibold bg-light border-bottom">
+                    <i class="fa-solid fa-link me-2"></i>Monitoring Integration Reference
+                </div>
+                <div class="card-body row g-3">
+                    @* DB path *@
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">SQLite Database Path</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace"
+                                   value="@Model.DbFilePath" readonly id="dbPathInput" />
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="copyField('dbPathInput', this)" title="Copy path">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            Use with the <a href="https://grafana.com/grafana/plugins/frser-sqlite-datasource/" target="_blank" rel="noopener">Grafana SQLite datasource plugin</a>
+                            for read-only dashboards on this host.
+                        </div>
+                    </div>
+
+                    @* API base URL *@
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">API Base URL</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace"
+                                   value="@apiBaseUrl" readonly id="apiBaseUrlInput" />
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="copyField('apiBaseUrlInput', this)" title="Copy URL">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            Endpoints: <code>/transfers</code>, <code>/audit</code>, <code>/health</code> —
+                            all accept <code>?since=&lt;ISO8601&gt;&amp;limit=500</code> query params.
+                        </div>
+                    </div>
+
+                    @* LogScale / CrowdStrike Next-Gen SIEM YAML *@
+                    <div class="col-12">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <label class="form-label fw-semibold mb-0">
+                                <i class="fa-solid fa-crow me-1"></i>CrowdStrike Next-Gen SIEM / LogScale Collector Config
+                            </label>
+                            <button class="btn btn-sm btn-outline-secondary" type="button"
+                                    onclick="copyField('logscaleYaml', this)">
+                                <i class="fa-solid fa-copy me-1"></i>Copy YAML
+                            </button>
+                        </div>
+                        @if (!hasApiKey)
+                        {
+                            <div class="alert alert-warning py-2 mb-2 small">
+                                <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                                Set an API key above and save before using this config — the key placeholder below will not work.
+                            </div>
+                        }
+                        <textarea id="logscaleYaml" class="form-control font-monospace small" rows="18" readonly
+                                  style="resize:vertical; background:#f8f9fa;">@logscaleYaml</textarea>
+                        <div class="form-text mt-1">
+                            Install the <a href="https://library.humio.com/falcon-logscale-collector/log-collector-getting-started.html"
+                                           target="_blank" rel="noopener">LogScale Collector</a> on this server, paste the config,
+                            then replace <code>YOUR_REPOSITORY</code> with your LogScale repository name.
+                            The collector will poll both endpoints every 60 seconds and forward structured JSON events.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="text-end">
                 <button type="submit" class="btn btn-primary">
                     <i class="fa-solid fa-floppy-disk me-1"></i>Save Portal Settings
@@ -537,7 +810,7 @@
         </form>
     </div>
 
-    @* ══ Tab 4: Branding ══════════════════════════════════════════════════════ *@
+    @* ══ Tab 5: Branding ══════════════════════════════════════════════════════ *@
     <div class="tab-pane fade @(activeTab == "branding" ? "show active" : "")" id="branding" role="tabpanel">
         <form method="post" asp-page-handler="SaveBranding">
             <div class="card">
@@ -588,6 +861,14 @@
     document.querySelectorAll('#settingsTabs a[data-bs-toggle="tab"]').forEach(el => {
         el.addEventListener('shown.bs.tab', e => history.replaceState(null, '', e.target.getAttribute('href')));
     });
+
+    // ── Show/hide SMB credential fields ──
+    const smbCredsToggle = document.getElementById('smbCredsToggle');
+    const smbCredFields  = document.getElementById('smbCredFields');
+    function toggleSmbCreds() {
+        if (smbCredFields) smbCredFields.style.display = smbCredsToggle?.checked ? '' : 'none';
+    }
+    if (smbCredsToggle) { smbCredsToggle.addEventListener('change', toggleSmbCreds); toggleSmbCreds(); }
 
     // ── Show/hide archive dir based on checkbox ──
     const archChk = document.getElementById('archAfter');
@@ -640,6 +921,17 @@
         });
     }
 
+    // ── Show/hide API key ──
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const toggleApiKeyBtn = document.getElementById('toggleApiKey');
+    if (toggleApiKeyBtn && apiKeyInput) {
+        toggleApiKeyBtn.addEventListener('click', () => {
+            const isText = apiKeyInput.type === 'text';
+            apiKeyInput.type = isText ? 'password' : 'text';
+            toggleApiKeyBtn.querySelector('i').className = isText ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+        });
+    }
+
     // ── Sync colour picker ↔ hex input ──
     const colorPicker = document.querySelector('input[type="color"][name="Branding.PrimaryColor"]');
     const colorHex = document.getElementById('colorHex');
@@ -650,5 +942,64 @@
         });
     }
 })();
+
+// ── Test Connection (AJAX — uses currently saved config) ──
+async function testConnection(btn) {
+    const icon    = btn.querySelector('i');
+    const origCls = icon ? icon.className : '';
+    const origTxt = btn.innerHTML;
+
+    btn.disabled = true;
+    if (icon) icon.className = 'fa-solid fa-spinner fa-spin me-1';
+
+    // Remove any previous result badge
+    const prev = btn.parentElement.querySelector('.test-result');
+    if (prev) prev.remove();
+
+    try {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+        const resp  = await fetch('?handler=TestConnection', {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': token, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: '__RequestVerificationToken=' + encodeURIComponent(token)
+        });
+        const data = await resp.json();
+        const badge = document.createElement('span');
+        badge.className = 'test-result badge ms-2 ' + (data.success ? 'bg-success' : 'bg-danger');
+        badge.innerHTML = (data.success ? '<i class="fa-solid fa-check me-1"></i>' : '<i class="fa-solid fa-xmark me-1"></i>') + data.message;
+        btn.insertAdjacentElement('afterend', badge);
+        setTimeout(() => badge.remove(), 8000);
+    } catch (e) {
+        const badge = document.createElement('span');
+        badge.className = 'test-result badge bg-danger ms-2';
+        badge.textContent = 'Request failed: ' + e.message;
+        btn.insertAdjacentElement('afterend', badge);
+        setTimeout(() => badge.remove(), 8000);
+    } finally {
+        btn.disabled = false;
+        if (icon) icon.className = origCls;
+    }
+}
+
+// ── Copy-to-clipboard helper (used by integration reference card) ──
+function copyField(inputId, btn) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    const text = el.tagName === 'TEXTAREA' ? el.value : el.value;
+    navigator.clipboard.writeText(text).then(() => {
+        const icon = btn.querySelector('i');
+        const original = icon ? icon.className : null;
+        if (icon) icon.className = 'fa-solid fa-check text-success';
+        btn.classList.add('text-success');
+        setTimeout(() => {
+            if (icon && original) icon.className = original;
+            btn.classList.remove('text-success');
+        }, 1800);
+    }).catch(() => {
+        // Fallback for non-HTTPS contexts
+        el.select();
+        document.execCommand('copy');
+    });
+}
 </script>
 }

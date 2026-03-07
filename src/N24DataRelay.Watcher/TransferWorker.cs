@@ -11,11 +11,14 @@ namespace N24DataRelay.Watcher;
 public sealed class TransferWorker : BackgroundService
 {
     private readonly ILogger<TransferWorker> _logger;
-    private readonly N24DataRelayConfiguration _config;
+    private readonly IOptionsMonitor<N24DataRelayConfiguration> _options;
+    private N24DataRelayConfiguration Config => _options.CurrentValue;
     private readonly IFileWatcher _fileWatcher;
     private readonly IFileQueue _fileQueue;
     private readonly IFileTransferServiceFactory _transferFactory;
     private readonly ITransferTracker _tracker;
+    private readonly IAuditLogger _audit;
+    private readonly N24DataRelay.Core.Interfaces.IEmailSender _emailSender;
     private Timer? _processTimer;
     private readonly SemaphoreSlim _processingSemaphore = new(1, 1);
     private CancellationToken _stoppingToken;
@@ -25,30 +28,34 @@ public sealed class TransferWorker : BackgroundService
 
     public TransferWorker(
         ILogger<TransferWorker> logger,
-        IOptions<N24DataRelayConfiguration> options,
+        IOptionsMonitor<N24DataRelayConfiguration> options,
         IFileWatcher fileWatcher,
         IFileQueue fileQueue,
         IFileTransferServiceFactory transferFactory,
-        ITransferTracker tracker)
+        ITransferTracker tracker,
+        IAuditLogger audit,
+        N24DataRelay.Core.Interfaces.IEmailSender emailSender)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _config = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
         _fileWatcher = fileWatcher ?? throw new ArgumentNullException(nameof(fileWatcher));
         _fileQueue = fileQueue ?? throw new ArgumentNullException(nameof(fileQueue));
         _transferFactory = transferFactory ?? throw new ArgumentNullException(nameof(transferFactory));
         _tracker = tracker ?? throw new ArgumentNullException(nameof(tracker));
+        _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+        _emailSender = emailSender ?? throw new ArgumentNullException(nameof(emailSender));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _stoppingToken = stoppingToken;
-        if (!_config.Service.Enabled)
+        if (!Config.Service.Enabled)
         {
             _logger.LogInformation("Watcher is disabled (Service.Enabled = false).");
             return;
         }
 
-        var watchDir = _config.Service.WatchDirectory;
+        var watchDir = Config.Service.WatchDirectory;
         if (string.IsNullOrEmpty(watchDir))
         {
             _logger.LogWarning("WatchDirectory is not configured.");
@@ -71,15 +78,17 @@ public sealed class TransferWorker : BackgroundService
 
         _fileWatcher.FileDetected += OnFileDetected;
         _fileWatcher.FileChanged += OnFileChanged;
-        _fileWatcher.StartWatching(watchDir, _config.Service.IncludeSubdirectories);
+        _fileWatcher.StartWatching(watchDir, Config.Service.IncludeSubdirectories, Config.Service.FileFilter);
 
         _processTimer = new Timer(
             ProcessPendingFiles,
             null,
-            TimeSpan.FromSeconds(_config.Service.ProcessingIntervalSeconds),
-            TimeSpan.FromSeconds(_config.Service.ProcessingIntervalSeconds));
+            TimeSpan.FromSeconds(Config.Service.ProcessingIntervalSeconds),
+            TimeSpan.FromSeconds(Config.Service.ProcessingIntervalSeconds));
 
-        _logger.LogInformation("Transfer worker started. WatchDirectory: {Path}, TransferMethod: {Method}", watchDir, _config.Service.TransferMethod);
+        _logger.LogInformation("Transfer worker started. WatchDirectory: {Path}, TransferMethod: {Method}, FileFilter: {Filter}",
+            watchDir, Config.Service.TransferMethod, Config.Service.FileFilter);
+        _audit.Log(AuditEventTypes.ServiceStarted, "system", details: new { watchDir, transferMethod = Config.Service.TransferMethod });
 
         await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
     }
@@ -87,6 +96,7 @@ public sealed class TransferWorker : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Transfer worker stopping...");
+        _audit.Log(AuditEventTypes.ServiceStopped, "system");
         _processTimer?.Dispose();
         _fileWatcher.FileDetected -= OnFileDetected;
         _fileWatcher.FileChanged -= OnFileChanged;
@@ -100,20 +110,20 @@ public sealed class TransferWorker : BackgroundService
         try
         {
             var fullPath = e.FullPath;
-            if (!fullPath.StartsWith(_config.Service.WatchDirectory, StringComparison.Ordinal))
+            if (!fullPath.StartsWith(Config.Service.WatchDirectory, StringComparison.Ordinal))
             {
                 _logger.LogDebug("Ignoring file outside watch directory: {Path}", fullPath);
                 return;
             }
-            var statusDir = Path.Combine(_config.Service.WatchDirectory, ".status");
+            var statusDir = Path.Combine(Config.Service.WatchDirectory, ".status");
             if (fullPath.StartsWith(statusDir, StringComparison.Ordinal))
             {
                 _logger.LogDebug("Ignoring status file: {Path}", fullPath);
                 return;
             }
-            if (_fileQueue.Count >= _config.Service.MaxQueueSize)
+            if (_fileQueue.Count >= Config.Service.MaxQueueSize)
             {
-                _logger.LogWarning("Queue full ({Max}). Ignoring: {Path}", _config.Service.MaxQueueSize, fullPath);
+                _logger.LogWarning("Queue full ({Max}). Ignoring: {Path}", Config.Service.MaxQueueSize, fullPath);
                 return;
             }
             if (File.Exists(fullPath))
@@ -184,7 +194,7 @@ public sealed class TransferWorker : BackgroundService
                     continue;
                 }
 
-                if (!_fileQueue.IsFileStable(filePath, _config.Service.FileStabilitySeconds))
+                if (!_fileQueue.IsFileStable(filePath, Config.Service.FileStabilitySeconds))
                     break;
 
                 _fileToTrackerId.TryGetValue(filePath, out var trackerId);
@@ -193,9 +203,9 @@ public sealed class TransferWorker : BackgroundService
                 if (trackerId != null)
                     _tracker.UpdateStatus(trackerId, TransferStatus.Transferring);
 
-                var retries = _config.Service.RetryAttempts;
-                var delaySec = _config.Service.RetryDelaySeconds;
-                var backoff = _config.Service.RetryBackoffMultiplier;
+                var retries = Config.Service.RetryAttempts;
+                var delaySec = Config.Service.RetryDelaySeconds;
+                var backoff = Config.Service.RetryBackoffMultiplier;
                 TransferResult? result = null;
 
                 for (var attempt = 0; attempt <= retries; attempt++)
@@ -204,6 +214,7 @@ public sealed class TransferWorker : BackgroundService
                     {
                         var svc = _transferFactory.CreateTransferService();
                         result = await svc.TransferFileAsync(filePath, null, _stoppingToken).ConfigureAwait(false);
+                        result.RetryCount = attempt;
                         if (result.Success)
                             break;
                     }
@@ -213,7 +224,7 @@ public sealed class TransferWorker : BackgroundService
                         if (attempt < retries)
                             await Task.Delay(TimeSpan.FromSeconds(delaySec * Math.Pow(backoff, attempt)), _stoppingToken).ConfigureAwait(false);
                         else
-                            result = new TransferResult { Success = false, ErrorMessage = ex.Message, FileName = Path.GetFileName(filePath), SourcePath = filePath };
+                            result = new TransferResult { Success = false, ErrorMessage = ex.Message, ErrorDetails = ex.ToString(), RetryCount = attempt, FileName = Path.GetFileName(filePath), SourcePath = filePath };
                     }
                 }
 
@@ -221,14 +232,14 @@ public sealed class TransferWorker : BackgroundService
                 {
                     _logger.LogInformation("Transferred: {FileName}", result.FileName);
                     if (trackerId != null)
-                        _tracker.UpdateStatus(trackerId, TransferStatus.Completed, destinationPath: result.DestinationPath);
+                        _tracker.UpdateStatus(trackerId, TransferStatus.Completed, destinationPath: result.DestinationPath, result: result);
 
-                    if (_config.Service.ArchiveAfterTransfer && !string.IsNullOrEmpty(_config.Service.ArchiveDirectory))
+                    if (Config.Service.ArchiveAfterTransfer && !string.IsNullOrEmpty(Config.Service.ArchiveDirectory))
                     {
                         try
                         {
-                            Directory.CreateDirectory(_config.Service.ArchiveDirectory);
-                            var archivePath = Path.Combine(_config.Service.ArchiveDirectory, Path.GetFileName(filePath));
+                            Directory.CreateDirectory(Config.Service.ArchiveDirectory);
+                            var archivePath = Path.Combine(Config.Service.ArchiveDirectory, Path.GetFileName(filePath));
                             File.Move(filePath, archivePath, overwrite: true);
                             if (trackerId != null)
                                 _tracker.UpdateStatus(trackerId, TransferStatus.Archived);
@@ -238,7 +249,7 @@ public sealed class TransferWorker : BackgroundService
                             _logger.LogWarning(ex, "Could not archive {Path}", filePath);
                         }
                     }
-                    else if (_config.Service.DeleteAfterTransfer)
+                    else if (Config.Service.DeleteAfterTransfer)
                     {
                         try
                         {
@@ -256,7 +267,38 @@ public sealed class TransferWorker : BackgroundService
                 {
                     _logger.LogError("Transfer failed: {FileName} - {Error}", result.FileName, result.ErrorMessage);
                     if (trackerId != null)
-                        _tracker.UpdateStatus(trackerId, TransferStatus.Failed, errorMessage: result.ErrorMessage);
+                        _tracker.UpdateStatus(trackerId, TransferStatus.Failed, errorMessage: result.ErrorMessage, result: result);
+                    _audit.Log(AuditEventTypes.TransferFailed, "system", subject: result.FileName,
+                        details: new { result.ErrorMessage, result.RetryCount, result.TransferMethod, result.RemoteHost });
+
+                    // Send failure notification email if a support address is configured.
+                    var supportEmail = Config.Branding.SupportEmail;
+                    if (!string.IsNullOrWhiteSpace(supportEmail))
+                    {
+                        try
+                        {
+                            await _emailSender.SendAsync(
+                                to: supportEmail,
+                                subject: $"[N24 Data Relay] Transfer failed: {result.FileName}",
+                                htmlBody: $"""
+                                    <h3>Transfer Failure Alert</h3>
+                                    <p>A file transfer has failed after exhausting all retry attempts.</p>
+                                    <table>
+                                        <tr><td><strong>File:</strong></td><td>{result.FileName}</td></tr>
+                                        <tr><td><strong>Source:</strong></td><td>{result.SourcePath}</td></tr>
+                                        <tr><td><strong>Error:</strong></td><td>{result.ErrorMessage}</td></tr>
+                                        <tr><td><strong>Retries:</strong></td><td>{result.RetryCount}</td></tr>
+                                        <tr><td><strong>Method:</strong></td><td>{result.TransferMethod}</td></tr>
+                                        <tr><td><strong>Remote host:</strong></td><td>{result.RemoteHost}</td></tr>
+                                        <tr><td><strong>Time:</strong></td><td>{DateTime.UtcNow:u}</td></tr>
+                                    </table>
+                                    """).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Could not send failure notification email.");
+                        }
+                    }
                 }
 
                 _fileToTrackerId.TryRemove(filePath, out _);

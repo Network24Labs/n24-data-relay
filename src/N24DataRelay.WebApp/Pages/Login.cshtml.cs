@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Models;
 using N24DataRelay.WebApp.Data;
+using N24DataRelay.WebApp.Services;
 
 namespace N24DataRelay.WebApp.Pages;
 
@@ -13,15 +14,18 @@ public class LoginModel : PageModel
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IOptionsMonitor<N24DataRelayConfiguration> _configMonitor;
+    private readonly IAuditLogger _audit;
 
     public LoginModel(
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
-        IOptionsMonitor<N24DataRelayConfiguration> configMonitor)
+        IOptionsMonitor<N24DataRelayConfiguration> configMonitor,
+        IAuditLogger audit)
     {
         _signInManager = signInManager;
         _userManager = userManager;
         _configMonitor = configMonitor;
+        _audit = audit;
     }
 
     [BindProperty]
@@ -83,6 +87,8 @@ public class LoginModel : PageModel
 
             if (user != null)
             {
+                _audit.Log(AuditEventTypes.UserLogin, Input.Email, ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
+
                 // Force change if explicitly flagged by an admin
                 if (user.MustChangePassword)
                     return RedirectToPage("/ChangePassword", new { forced = true });
@@ -99,6 +105,8 @@ public class LoginModel : PageModel
 
             return LocalRedirect(returnUrl);
         }
+
+        _audit.Log(AuditEventTypes.UserLoginFailed, Input.Email, details: new { result.IsLockedOut }, ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
 
         if (result.IsLockedOut)
             ErrorMessage = "Account locked. Try again later.";

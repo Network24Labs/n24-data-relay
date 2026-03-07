@@ -20,16 +20,19 @@ public sealed class FileWatcher : IFileWatcher
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public void StartWatching(string path, bool includeSubdirectories)
+    public void StartWatching(string path, bool includeSubdirectories, string? filter = null)
     {
         if (_watcher != null)
             throw new InvalidOperationException("Watcher is already started.");
 
+        var resolvedFilter = string.IsNullOrWhiteSpace(filter) ? "*.*" : filter.Trim();
+
         _watcher = new FileSystemWatcher(path)
         {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            Filter                = resolvedFilter,
+            NotifyFilter          = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
             IncludeSubdirectories = includeSubdirectories,
-            EnableRaisingEvents = true
+            EnableRaisingEvents   = true
         };
 
         _watcher.Created += OnFileCreated;

@@ -91,11 +91,19 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITransferTracker>(sp => sp.GetRequiredService<SqliteTransferTracker>());
         services.AddHostedService(sp => sp.GetRequiredService<SqliteTransferTracker>());
 
+        // SQLite-backed audit logger.
+        services.AddSingleton<SqliteAuditLogger>();
+        services.AddSingleton<IAuditLogger>(sp => sp.GetRequiredService<SqliteAuditLogger>());
+        services.AddHostedService(sp => sp.GetRequiredService<SqliteAuditLogger>());
+
         services.AddSignalR().AddJsonProtocol(options =>
             options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         services.AddHostedService<TransferStatusBroadcaster>();
 
         services.AddRazorPages()
+            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
+
+        services.AddControllers()
             .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
 
         return services;

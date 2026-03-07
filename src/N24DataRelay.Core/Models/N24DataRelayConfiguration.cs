@@ -91,6 +91,11 @@ public class AuthenticationSettings
     public int PasswordExpiryDays { get; set; } = 90;
     /// <summary>Days before expiry at which a warning banner is shown. 0 = no warning.</summary>
     public int PasswordExpiryWarningDays { get; set; } = 14;
+    /// <summary>
+    /// Bearer token required for <c>/api/v1</c> endpoints. Generate a random 32+ char string.
+    /// Prefer the <c>N24DataRelay__WebPortal__Authentication__ApiKey</c> environment variable.
+    /// </summary>
+    public string ApiKey { get; set; } = string.Empty;
 }
 
 public class KestrelSettings

@@ -69,9 +69,57 @@ using (var scope = app.Services.CreateScope())
         ON "TransferRecords" ("SourcePath")
         """);
 
-    // Additive columns on AspNetUsers (ALTER TABLE errors on duplicate columns are silently ignored).
-    try { db.Database.ExecuteSqlRaw("ALTER TABLE \"AspNetUsers\" ADD COLUMN \"PasswordLastChangedAt\" TEXT"); } catch { }
-    try { db.Database.ExecuteSqlRaw("ALTER TABLE \"AspNetUsers\" ADD COLUMN \"MustChangePassword\" INTEGER NOT NULL DEFAULT 0"); } catch { }
+    // Additive column migrations — only ALTER if the column doesn't already exist,
+    // so startup logs stay clean on every run after the first.
+    // Table and column names are all compile-time literals — no injection risk.
+#pragma warning disable EF1002
+    static bool ColumnExists(ApplicationDbContext ctx, string table, string column)
+    {
+        var count = ctx.Database.SqlQueryRaw<int>(
+            $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'")
+            .AsEnumerable().FirstOrDefault();
+        return count > 0;
+    }
+
+    static void AddColumnIfMissing(ApplicationDbContext ctx, string table, string column, string columnDef)
+    {
+        if (!ColumnExists(ctx, table, column))
+            ctx.Database.ExecuteSqlRaw($"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {columnDef}");
+    }
+#pragma warning restore EF1002
+
+    // AspNetUsers — password lifecycle columns (Phase 2)
+    AddColumnIfMissing(db, "AspNetUsers", "PasswordLastChangedAt", "TEXT");
+    AddColumnIfMissing(db, "AspNetUsers", "MustChangePassword",    "INTEGER NOT NULL DEFAULT 0");
+
+    // TransferRecords — observability columns (Phase 3)
+    AddColumnIfMissing(db, "TransferRecords", "RetryCount",           "INTEGER NOT NULL DEFAULT 0");
+    AddColumnIfMissing(db, "TransferRecords", "ThroughputBytesPerSec","REAL");
+    AddColumnIfMissing(db, "TransferRecords", "Verified",             "INTEGER NOT NULL DEFAULT 0");
+    AddColumnIfMissing(db, "TransferRecords", "ErrorDetails",         "TEXT");
+    AddColumnIfMissing(db, "TransferRecords", "TransferMethod",       "TEXT");
+    AddColumnIfMissing(db, "TransferRecords", "RemoteHost",           "TEXT");
+
+    // Phase 3: AuditEvents table.
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS "AuditEvents" (
+            "Id"        TEXT NOT NULL CONSTRAINT "PK_AuditEvents" PRIMARY KEY,
+            "Timestamp" TEXT NOT NULL,
+            "EventType" TEXT NOT NULL,
+            "Actor"     TEXT,
+            "Subject"   TEXT,
+            "Details"   TEXT,
+            "IpAddress" TEXT
+        )
+        """);
+    db.Database.ExecuteSqlRaw("""
+        CREATE INDEX IF NOT EXISTS "IX_AuditEvents_Timestamp"
+        ON "AuditEvents" ("Timestamp")
+        """);
+    db.Database.ExecuteSqlRaw("""
+        CREATE INDEX IF NOT EXISTS "IX_AuditEvents_EventType"
+        ON "AuditEvents" ("EventType")
+        """);
 
     // Seed the Admin role so it is available for the first registered user.
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();

@@ -14,11 +14,13 @@ public class ForgotPasswordModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEmailSender _emailSender;
+    private readonly IAuditLogger _audit;
 
-    public ForgotPasswordModel(UserManager<ApplicationUser> userManager, IEmailSender emailSender)
+    public ForgotPasswordModel(UserManager<ApplicationUser> userManager, IEmailSender emailSender, IAuditLogger audit)
     {
         _userManager = userManager;
         _emailSender = emailSender;
+        _audit = audit;
     }
 
     [BindProperty]
@@ -44,6 +46,9 @@ public class ForgotPasswordModel : PageModel
         // (prevents user-enumeration).
         if (user != null && user.IsApproved)
         {
+            _audit.Log(AuditEventTypes.PasswordResetRequested, Input.Email, subject: Input.Email,
+                ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
+
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
             var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
 

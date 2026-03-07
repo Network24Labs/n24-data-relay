@@ -5,16 +5,19 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
 using N24DataRelay.WebApp.Data;
+using N24DataRelay.WebApp.Services;
 
 namespace N24DataRelay.WebApp.Pages;
 
 public class ResetPasswordModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IAuditLogger _audit;
 
-    public ResetPasswordModel(UserManager<ApplicationUser> userManager)
+    public ResetPasswordModel(UserManager<ApplicationUser> userManager, IAuditLogger audit)
     {
         _userManager = userManager;
+        _audit = audit;
     }
 
     [BindProperty]
@@ -82,6 +85,8 @@ public class ResetPasswordModel : PageModel
             user.PasswordLastChangedAt = DateTime.UtcNow;
             user.MustChangePassword = false;
             await _userManager.UpdateAsync(user);
+            _audit.Log(AuditEventTypes.PasswordReset, Input.Email, subject: Input.Email,
+                ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
             Succeeded = true;
             return Page();
         }

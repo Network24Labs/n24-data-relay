@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Models;
 using N24DataRelay.WebApp.Data;
+using N24DataRelay.WebApp.Services;
 
 namespace N24DataRelay.WebApp.Pages.Admin;
 
@@ -17,15 +18,18 @@ public class UsersModel : PageModel
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly IOptionsMonitor<N24DataRelayConfiguration> _config;
+    private readonly IAuditLogger _audit;
 
     public UsersModel(
         UserManager<ApplicationUser> userManager,
         RoleManager<IdentityRole> roleManager,
-        IOptionsMonitor<N24DataRelayConfiguration> config)
+        IOptionsMonitor<N24DataRelayConfiguration> config,
+        IAuditLogger audit)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _config = config;
+        _audit = audit;
     }
 
     public List<UserViewModel> PendingUsers { get; set; } = new();
@@ -125,6 +129,7 @@ public class UsersModel : PageModel
         user.ApprovedBy = User.Identity?.Name;
         await _userManager.UpdateAsync(user);
 
+        _audit.Log(AuditEventTypes.UserApproved, User.Identity?.Name, subject: user.Email);
         StatusMessage = $"User {user.Email} has been approved.";
         return RedirectToPage();
     }
@@ -137,6 +142,7 @@ public class UsersModel : PageModel
         var email = user.Email ?? user.UserName;
         await _userManager.DeleteAsync(user);
 
+        _audit.Log(AuditEventTypes.UserRejected, User.Identity?.Name, subject: email);
         StatusMessage = $"User {email} has been removed.";
         return RedirectToPage();
     }
@@ -156,11 +162,13 @@ public class UsersModel : PageModel
         if (await _userManager.IsInRoleAsync(user, "Admin"))
         {
             await _userManager.RemoveFromRoleAsync(user, "Admin");
+            _audit.Log(AuditEventTypes.RoleRevoked, User.Identity?.Name, subject: user.Email, details: new { role = "Admin" });
             StatusMessage = $"{user.Email} removed from Admin role.";
         }
         else
         {
             await _userManager.AddToRoleAsync(user, "Admin");
+            _audit.Log(AuditEventTypes.RoleGranted, User.Identity?.Name, subject: user.Email, details: new { role = "Admin" });
             StatusMessage = $"{user.Email} added to Admin role.";
         }
 
@@ -182,6 +190,7 @@ public class UsersModel : PageModel
         user.IsApproved = false;
         await _userManager.UpdateAsync(user);
 
+        _audit.Log(AuditEventTypes.UserRevoked, User.Identity?.Name, subject: user.Email);
         StatusMessage = $"Access revoked for {user.Email}.";
         return RedirectToPage();
     }
@@ -196,6 +205,9 @@ public class UsersModel : PageModel
 
         user.MustChangePassword = true;
         await _userManager.UpdateAsync(user);
+
+        _audit.Log(AuditEventTypes.PasswordResetRequested, User.Identity?.Name, subject: user.Email,
+            details: new { forced = true });
 
         var token = await _userManager.GeneratePasswordResetTokenAsync(user);
         var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));

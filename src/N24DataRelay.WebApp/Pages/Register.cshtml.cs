@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Models;
 using N24DataRelay.WebApp.Data;
+using N24DataRelay.WebApp.Services;
 
 namespace N24DataRelay.WebApp.Pages;
 
@@ -13,15 +14,18 @@ public class RegisterModel : PageModel
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly IOptionsMonitor<N24DataRelayConfiguration> _configMonitor;
+    private readonly IAuditLogger _audit;
 
     public RegisterModel(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
-        IOptionsMonitor<N24DataRelayConfiguration> configMonitor)
+        IOptionsMonitor<N24DataRelayConfiguration> configMonitor,
+        IAuditLogger audit)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _configMonitor = configMonitor;
+        _audit = audit;
     }
 
     [BindProperty]
@@ -83,9 +87,14 @@ public class RegisterModel : PageModel
             return Page();
         }
 
+        _audit.Log(AuditEventTypes.UserRegistered, Input.Email, subject: Input.Email,
+            details: new { isFirstUser, requireApproval = !isFirstUser && _configMonitor.CurrentValue.WebPortal.Authentication.RequireApproval },
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
+
         if (isFirstUser)
         {
             await _userManager.AddToRoleAsync(user, "Admin");
+            _audit.Log(AuditEventTypes.RoleGranted, "system", subject: Input.Email, details: new { role = "Admin" });
             await _signInManager.SignInAsync(user, isPersistent: false);
             return LocalRedirect(returnUrl);
         }

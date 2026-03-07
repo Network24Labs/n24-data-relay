@@ -9,7 +9,8 @@ namespace N24DataRelay.Core.Interfaces;
 public interface ITransferTracker
 {
     TransferStatusRecord Enqueue(string fileName, string sourcePath, string uploadedBy, long? fileSize = null);
-    void UpdateStatus(string id, TransferStatus status, string? errorMessage = null, string? destinationPath = null);
+    void UpdateStatus(string id, TransferStatus status, string? errorMessage = null, string? destinationPath = null,
+        TransferResult? result = null);
     IReadOnlyList<TransferStatusRecord> GetRecent(int max = 50);
     TransferStatusRecord? GetById(string id);
     TransferStatusRecord? FindBySourcePath(string sourcePath);
