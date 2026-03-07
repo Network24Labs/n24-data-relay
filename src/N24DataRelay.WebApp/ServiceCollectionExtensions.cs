@@ -73,6 +73,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddScoped<FileUploadService>();
+        services.AddSingleton<ConfigWriterService>();
 
         // SQLite-backed tracker: persists records across restarts (IHostedService for startup load).
         services.AddSingleton<SqliteTransferTracker>();

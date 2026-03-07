@@ -1,0 +1,642 @@
+@page
+@model N24DataRelay.WebApp.Pages.Admin.SettingsModel
+@{
+    ViewData["Title"] = "System Settings";
+    var activeTab = (Model.ActiveTab ?? "ssh");
+}
+
+<div class="d-flex align-items-center mb-4 gap-2">
+    <i class="fa-solid fa-sliders fa-lg text-primary"></i>
+    <h1 class="h3 mb-0">System Settings</h1>
+    <span class="badge bg-secondary ms-auto font-monospace small" title="Active config write target">
+        <i class="fa-solid fa-file-pen me-1"></i>@Model.WritePath
+    </span>
+</div>
+
+@if (Model.StatusMessage != null)
+{
+    var isError = Model.StatusMessage.StartsWith("Error", StringComparison.OrdinalIgnoreCase);
+    <div class="alert alert-@(isError ? "danger" : "success") alert-dismissible fade show" role="alert">
+        <i class="fa-solid fa-@(isError ? "circle-exclamation" : "circle-check") me-2"></i>@Model.StatusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@* ── Config health bar ───────────────────────────────────────────────────── *@
+@{
+    var sshOk = !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.Host) && !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.Username);
+    var watchOk = !string.IsNullOrWhiteSpace(Model.Config.Service.WatchDirectory);
+    var keyOk = Model.Config.Transfer.Ssh.AuthMethod != "PublicKey" || !string.IsNullOrWhiteSpace(Model.Config.Transfer.Ssh.PrivateKeyPath);
+}
+<div class="d-flex flex-wrap gap-2 mb-4">
+    <span class="badge @(sshOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
+        <i class="fa-solid fa-@(sshOk ? "check" : "triangle-exclamation") me-1"></i>SSH host @(sshOk ? "configured" : "not set")
+    </span>
+    <span class="badge @(keyOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
+        <i class="fa-solid fa-@(keyOk ? "check" : "triangle-exclamation") me-1"></i>SSH key @(keyOk ? "set" : "not set")
+    </span>
+    <span class="badge @(watchOk ? "bg-success" : "bg-warning text-dark") fs-6 fw-normal py-2 px-3">
+        <i class="fa-solid fa-@(watchOk ? "check" : "triangle-exclamation") me-1"></i>Watch directory @(watchOk ? "configured" : "not set")
+    </span>
+</div>
+
+@* ── Nav tabs ────────────────────────────────────────────────────────────── *@
+<ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "ssh" ? "active" : "")" href="#ssh" data-bs-toggle="tab" role="tab">
+            <i class="fa-solid fa-terminal me-1"></i>SSH / Transfer Target
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "service" ? "active" : "")" href="#service" data-bs-toggle="tab" role="tab">
+            <i class="fa-solid fa-gears me-1"></i>Transfer Service
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "portal" ? "active" : "")" href="#portal" data-bs-toggle="tab" role="tab">
+            <i class="fa-solid fa-globe me-1"></i>Web Portal
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "branding" ? "active" : "")" href="#branding" data-bs-toggle="tab" role="tab">
+            <i class="fa-solid fa-palette me-1"></i>Branding
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+
+    @* ══ Tab 1: SSH ══════════════════════════════════════════════════════════ *@
+    <div class="tab-pane fade @(activeTab == "ssh" ? "show active" : "")" id="ssh" role="tabpanel">
+        <form method="post" asp-page-handler="SaveSsh">
+            <div class="card">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-server me-2"></i>SCADA Transfer Target — SSH Connection</div>
+                <div class="card-body row g-3">
+
+                    <div class="col-md-8">
+                        <label asp-for="Ssh.Host" class="form-label">Host <span class="text-danger">*</span></label>
+                        <input asp-for="Ssh.Host" class="form-control font-monospace" placeholder="192.168.10.50 or scada.internal" />
+                        <span asp-validation-for="Ssh.Host" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Ssh.Port" class="form-label">Port</label>
+                        <input asp-for="Ssh.Port" type="number" class="form-control" min="1" max="65535" />
+                        <span asp-validation-for="Ssh.Port" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="Ssh.Username" class="form-label">Username <span class="text-danger">*</span></label>
+                        <input asp-for="Ssh.Username" class="form-control font-monospace" placeholder="relay" />
+                        <span asp-validation-for="Ssh.Username" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Ssh.DestinationPath" class="form-label">Destination Path <span class="text-danger">*</span></label>
+                        <input asp-for="Ssh.DestinationPath" class="form-control font-monospace" placeholder="/opt/relay/incoming" />
+                        <span asp-validation-for="Ssh.DestinationPath" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Authentication Method</label>
+                        <div class="d-flex gap-3 mt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Ssh.AuthMethod" value="PublicKey" id="authPk" />
+                                <label class="form-check-label" for="authPk"><i class="fa-solid fa-key me-1"></i>Public Key</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Ssh.AuthMethod" value="Password" id="authPwd" />
+                                <label class="form-check-label" for="authPwd"><i class="fa-solid fa-lock me-1"></i>Password</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Remote Server Type</label>
+                        <div class="d-flex gap-3 mt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Ssh.RemoteServerType" value="Linux" id="stLinux" />
+                                <label class="form-check-label" for="stLinux">Linux</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Ssh.RemoteServerType" value="Windows" id="stWin" />
+                                <label class="form-check-label" for="stWin">Windows</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12" id="keyPathRow">
+                        <label asp-for="Ssh.PrivateKeyPath" class="form-label">Private Key Path</label>
+                        <input asp-for="Ssh.PrivateKeyPath" class="form-control font-monospace" placeholder="/etc/n24-data-relay/keys/id_ed25519" />
+                        <div class="form-text">
+                            Leave blank to use the default key. Set the passphrase via the
+                            <code>N24_SSH_KEY_PASSPHRASE</code> environment variable (not stored in config).
+                        </div>
+                    </div>
+
+                    @* ── Advanced ─────────────────────────────────────── *@
+                    <div class="col-12">
+                        <a class="text-decoration-none small" data-bs-toggle="collapse" href="#sshAdvanced">
+                            <i class="fa-solid fa-chevron-down me-1"></i>Advanced options
+                        </a>
+                        <div class="collapse mt-2" id="sshAdvanced">
+                            <div class="card card-body bg-body-secondary row g-3">
+                                <div class="col-md-4">
+                                    <label asp-for="Ssh.ConnectionTimeout" class="form-label">Connection Timeout (s)</label>
+                                    <input asp-for="Ssh.ConnectionTimeout" type="number" class="form-control" min="10" max="300" />
+                                    <span asp-validation-for="Ssh.ConnectionTimeout" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-4">
+                                    <label asp-for="Ssh.OperationTimeout" class="form-label">Operation Timeout (s)</label>
+                                    <input asp-for="Ssh.OperationTimeout" type="number" class="form-control" min="60" max="3600" />
+                                    <span asp-validation-for="Ssh.OperationTimeout" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-4 d-flex flex-column justify-content-end pb-1 gap-2">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" asp-for="Ssh.Compression" />
+                                        <label class="form-check-label" asp-for="Ssh.Compression">Enable Compression</label>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" asp-for="Ssh.StrictHostKeyChecking" />
+                                        <label class="form-check-label" asp-for="Ssh.StrictHostKeyChecking">Strict Host Key Checking</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer text-end">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk me-1"></i>Save SSH Settings
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    @* ══ Tab 2: Transfer Service ══════════════════════════════════════════════ *@
+    <div class="tab-pane fade @(activeTab == "service" ? "show active" : "")" id="service" role="tabpanel">
+        <form method="post" asp-page-handler="SaveService">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-folder-open me-2"></i>Directories</div>
+                <div class="card-body row g-3">
+                    <div class="col-12">
+                        <label asp-for="Service.WatchDirectory" class="form-label">Watch Directory <span class="text-danger">*</span></label>
+                        <input asp-for="Service.WatchDirectory" class="form-control font-monospace" placeholder="/var/lib/n24-data-relay/uploads/transfer" />
+                        <div class="form-text">Files placed here are automatically queued for transfer to SCADA.</div>
+                        <span asp-validation-for="Service.WatchDirectory" class="text-danger small"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-file-circle-check me-2"></i>File Handling</div>
+                <div class="card-body row g-3">
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Service.DeleteAfterTransfer" id="delAfter" />
+                            <label class="form-check-label" asp-for="Service.DeleteAfterTransfer">Delete source file after successful transfer</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Service.VerifyTransfer" />
+                            <label class="form-check-label" asp-for="Service.VerifyTransfer">Verify file integrity after transfer</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Service.ArchiveAfterTransfer" id="archAfter" />
+                            <label class="form-check-label" asp-for="Service.ArchiveAfterTransfer">Archive file after transfer</label>
+                        </div>
+                    </div>
+                    <div class="col-12" id="archiveDirRow">
+                        <label asp-for="Service.ArchiveDirectory" class="form-label">Archive Directory</label>
+                        <input asp-for="Service.ArchiveDirectory" class="form-control font-monospace" placeholder="/var/lib/n24-data-relay/archive" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-rotate me-2"></i>Retry &amp; Timing</div>
+                <div class="card-body row g-3">
+                    <div class="col-md-4">
+                        <label asp-for="Service.RetryAttempts" class="form-label">Retry Attempts</label>
+                        <input asp-for="Service.RetryAttempts" type="number" class="form-control" min="0" max="10" />
+                        <span asp-validation-for="Service.RetryAttempts" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Service.RetryDelaySeconds" class="form-label">Retry Delay (s)</label>
+                        <input asp-for="Service.RetryDelaySeconds" type="number" class="form-control" min="5" max="300" />
+                        <span asp-validation-for="Service.RetryDelaySeconds" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Service.RetryBackoffMultiplier" class="form-label">Backoff Multiplier</label>
+                        <input asp-for="Service.RetryBackoffMultiplier" type="number" step="0.1" class="form-control" min="1" max="5" />
+                        <span asp-validation-for="Service.RetryBackoffMultiplier" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Service.FileStabilitySeconds" class="form-label">File Stability Grace Period (s)</label>
+                        <input asp-for="Service.FileStabilitySeconds" type="number" class="form-control" min="1" max="60" />
+                        <div class="form-text">Wait this long after last file write before transferring.</div>
+                        <span asp-validation-for="Service.FileStabilitySeconds" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Service.ProcessingIntervalSeconds" class="form-label">Polling Interval (s)</label>
+                        <input asp-for="Service.ProcessingIntervalSeconds" type="number" class="form-control" min="5" max="300" />
+                        <span asp-validation-for="Service.ProcessingIntervalSeconds" class="text-danger small"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="text-end">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk me-1"></i>Save Transfer Settings
+                </button>
+            </div>
+        </form>
+    </div>
+
+    @* ══ Tab 3: Web Portal ════════════════════════════════════════════════════ *@
+    <div class="tab-pane fade @(activeTab == "portal" ? "show active" : "")" id="portal" role="tabpanel">
+        <form method="post" asp-page-handler="SavePortal">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-network-wired me-2"></i>Network &amp; TLS</div>
+                <div class="card-body row g-3">
+                    <div class="col-md-4">
+                        <label asp-for="Portal.HttpPort" class="form-label">HTTP Port</label>
+                        <input asp-for="Portal.HttpPort" type="number" class="form-control" min="1" max="65535" />
+                        <span asp-validation-for="Portal.HttpPort" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Portal.HttpsPort" class="form-label">HTTPS Port</label>
+                        <input asp-for="Portal.HttpsPort" type="number" class="form-control" min="1" max="65535" />
+                        <span asp-validation-for="Portal.HttpsPort" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end pb-1">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Portal.EnableHttps" id="enableHttps" />
+                            <label class="form-check-label" asp-for="Portal.EnableHttps">Enable HTTPS</label>
+                        </div>
+                    </div>
+                    <div class="col-12" id="certPathRow">
+                        <label asp-for="Portal.CertificatePath" class="form-label">TLS Certificate Path (.pfx)</label>
+                        <input asp-for="Portal.CertificatePath" class="form-control font-monospace" placeholder="/etc/n24-data-relay/certs/relay.pfx" />
+                        <div class="form-text">
+                            Set the certificate password via the <code>N24_CERT_PASSWORD</code> environment variable.
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 mb-0">
+                            <i class="fa-solid fa-circle-info me-1"></i>
+                            Port and HTTPS changes require a service restart to take effect.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-upload me-2"></i>Upload Configuration</div>
+                <div class="card-body row g-3">
+                    <div class="col-12">
+                        <label asp-for="Portal.UploadDirectory" class="form-label">Upload Directory <span class="text-danger">*</span></label>
+                        <input asp-for="Portal.UploadDirectory" class="form-control font-monospace" placeholder="/var/lib/n24-data-relay/uploads" />
+                        <div class="form-text">Uploaded files are staged here before being moved to the watch directory.</div>
+                        <span asp-validation-for="Portal.UploadDirectory" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-5">
+                        <label asp-for="Portal.MaxFileSizeGb" class="form-label">Max File Size (GB)</label>
+                        <input asp-for="Portal.MaxFileSizeGb" type="number" step="0.1" class="form-control" min="0.1" max="100" />
+                        <span asp-validation-for="Portal.MaxFileSizeGb" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-7">
+                        <label asp-for="Portal.BlockedExtensions" class="form-label">Blocked File Extensions</label>
+                        <input asp-for="Portal.BlockedExtensions" class="form-control font-monospace" placeholder=".exe, .dll, .bat, .cmd, .ps1" />
+                        <div class="form-text">Comma-separated, include the leading dot.</div>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Portal.EnableUploadToTransfer" />
+                            <label class="form-check-label" asp-for="Portal.EnableUploadToTransfer">
+                                Automatically move uploaded files to watch directory for transfer
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-user-shield me-2"></i>Authentication</div>
+                <div class="card-body row g-3">
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Portal.EnableLocalAccounts" />
+                            <label class="form-check-label" asp-for="Portal.EnableLocalAccounts">Enable local account registration</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Portal.RequireApproval" />
+                            <label class="form-check-label" asp-for="Portal.RequireApproval">Require admin approval for new accounts</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Entra ID (Azure AD) card ────────────────────────────────────── *@
+            <div class="card mb-4 border-primary">
+                <div class="card-header fw-semibold bg-primary bg-opacity-10">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" asp-for="Portal.EnableEntraId" id="entraToggle" />
+                        <label class="form-check-label fw-semibold" asp-for="Portal.EnableEntraId">
+                            <i class="fa-brands fa-microsoft me-1"></i>Enable Entra ID (Azure AD) Authentication
+                        </label>
+                    </div>
+                </div>
+                <div id="entraFields" class="card-body row g-3">
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 mb-0 small">
+                            <i class="fa-solid fa-circle-info me-1"></i>
+                            These values are written to the <strong>AzureAd</strong> section of the config file.
+                            For production, set the Client Secret via the
+                            <code>AzureAd__ClientSecret</code> environment variable instead of storing it in the file.
+                            After saving, restart the service for Entra ID to take effect.
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="Portal.EntraIdTenantId" class="form-label">
+                            Tenant ID <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Portal.EntraIdTenantId" class="form-control font-monospace"
+                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" />
+                        <div class="form-text">Found in Azure portal → Azure Active Directory → Overview.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Portal.EntraIdClientId" class="form-label">
+                            Client ID (Application ID) <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Portal.EntraIdClientId" class="form-control font-monospace"
+                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" />
+                        <div class="form-text">Found in Azure portal → App registrations → your app → Overview.</div>
+                    </div>
+
+                    @* ── Credential mode ──────────────────────────────────────── *@
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Credential Mode</label>
+                        <div class="d-flex gap-4 mt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Portal.EntraIdCredentialMode"
+                                       value="Secret" id="credSecret" />
+                                <label class="form-check-label" for="credSecret">
+                                    <i class="fa-solid fa-key me-1 text-warning"></i>Client Secret
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" asp-for="Portal.EntraIdCredentialMode"
+                                       value="ManagedIdentity" id="credMI" />
+                                <label class="form-check-label" for="credMI">
+                                    <i class="fa-solid fa-shield-halved me-1 text-success"></i>Managed Identity
+                                    <span class="badge bg-success ms-1">Recommended</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* ── Secret fields (shown when credentialMode = Secret) ────── *@
+                    <div id="secretFields" class="col-12 row g-3 mx-0 px-0">
+                        <div class="col-md-8">
+                            <label asp-for="Portal.EntraIdClientSecret" class="form-label">Client Secret</label>
+                            <div class="input-group">
+                                <input asp-for="Portal.EntraIdClientSecret" type="password"
+                                       class="form-control font-monospace"
+                                       placeholder="Leave blank to keep existing"
+                                       autocomplete="new-password" />
+                                <button class="btn btn-outline-secondary" type="button" id="toggleSecret" title="Show/hide">
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                            <div class="form-text d-flex align-items-center gap-2 mt-1">
+                                Current status:
+                                @{
+                                    var secretBadgeClass = Model.EntraIdSecretStatus == "not set"
+                                        ? "bg-warning text-dark"
+                                        : Model.EntraIdSecretStatus == "managed identity"
+                                            ? "bg-success"
+                                            : "bg-success";
+                                }
+                                <span class="badge @secretBadgeClass">@Model.EntraIdSecretStatus</span>
+                                @if (Model.EntraIdSecretStatus == "set in config file")
+                                {
+                                    <span class="text-muted small">— Prefer <code>AzureAd__ClientSecret</code> env var for production</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    @* ── Managed identity fields (shown when credentialMode = ManagedIdentity) *@
+                    <div id="managedIdentityFields" class="col-12 row g-3 mx-0 px-0">
+                        <div class="col-md-8">
+                            <label asp-for="Portal.ManagedIdentityClientId" class="form-label">
+                                Managed Identity Client ID
+                                <span class="text-muted fw-normal">(optional)</span>
+                            </label>
+                            <input asp-for="Portal.ManagedIdentityClientId" class="form-control font-monospace"
+                                   placeholder="Leave blank for system-assigned identity" />
+                            <div class="form-text">
+                                Leave blank to use the Arc server's system-assigned managed identity.
+                                Specify a Client ID only if you created a user-assigned identity.
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-success py-3 mb-0">
+                                <h6 class="alert-heading mb-2">
+                                    <i class="fa-solid fa-circle-check me-1"></i>Azure Arc — Workload Identity Setup
+                                </h6>
+                                <p class="mb-2 small">
+                                    With managed identity, no client secret is ever stored. The Arc agent on this server
+                                    provides a signed token assertion that Entra ID trusts via a
+                                    <strong>Federated Identity Credential</strong> on your app registration.
+                                </p>
+                                <ol class="small mb-0">
+                                    <li class="mb-1">
+                                        <strong>Enrol this server in Azure Arc</strong> (if not already done) and confirm
+                                        the <em>Azure Connected Machine Agent</em> is running:
+                                        <code class="d-block mt-1">systemctl status himdsd</code>
+                                    </li>
+                                    <li class="mb-1">
+                                        In the Azure portal, open <strong>Azure Arc → Servers → &lt;this server&gt;</strong>
+                                        and copy the <strong>Object (principal) ID</strong> of its managed identity.
+                                    </li>
+                                    <li class="mb-1">
+                                        Open <strong>Microsoft Entra ID → App registrations → &lt;your app&gt; →
+                                        Certificates &amp; secrets → Federated credentials → Add</strong>.
+                                        <ul class="mt-1">
+                                            <li>Scenario: <em>Other issuer</em></li>
+                                            <li>Issuer: <code>https://sts.windows.net/@(Model.Portal.EntraIdTenantId != "" ? Model.Portal.EntraIdTenantId : "&lt;your-tenant-id&gt;")/</code></li>
+                                            <li>Subject identifier: the Object ID copied above</li>
+                                        </ul>
+                                    </li>
+                                    <li class="mb-1">
+                                        Save this page — the config will contain a <code>ClientCredentials</code> array
+                                        instead of <code>ClientSecret</code>. <strong>Restart the service</strong> for it
+                                        to take effect.
+                                    </li>
+                                    <li>
+                                        <strong>Delete the app registration's client secrets</strong> once you have
+                                        verified the managed identity login works.
+                                    </li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label asp-for="Portal.EntraIdCallbackPath" class="form-label">Callback Path</label>
+                        <input asp-for="Portal.EntraIdCallbackPath" class="form-control font-monospace"
+                               placeholder="/signin-oidc" />
+                        <div class="form-text">Must match your app registration's Redirect URI.</div>
+                    </div>
+
+                    <div class="col-12">
+                        <label asp-for="Portal.EntraIdInstance" class="form-label">Authority Instance</label>
+                        <input asp-for="Portal.EntraIdInstance" class="form-control font-monospace"
+                               placeholder="https://login.microsoftonline.com/" />
+                        <div class="form-text">
+                            Use the default for standard Microsoft 365 / commercial tenants.
+                            Sovereign clouds: <code>https://login.microsoftonline.us/</code> (US Gov),
+                            <code>https://login.chinacloudapi.cn/</code> (China).
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="alert alert-secondary py-2 mb-0 small">
+                            <strong>App registration — general checklist:</strong>
+                            <ol class="mb-0 mt-1">
+                                <li>Platform: <strong>Web</strong> → Redirect URI: <code>https://&lt;your-host&gt;@(Model.Portal.EntraIdCallbackPath)</code></li>
+                                <li>API permissions: <strong>openid</strong>, <strong>profile</strong>, <strong>email</strong> (delegated, admin consent granted)</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-end">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk me-1"></i>Save Portal Settings
+                </button>
+            </div>
+        </form>
+    </div>
+
+    @* ══ Tab 4: Branding ══════════════════════════════════════════════════════ *@
+    <div class="tab-pane fade @(activeTab == "branding" ? "show active" : "")" id="branding" role="tabpanel">
+        <form method="post" asp-page-handler="SaveBranding">
+            <div class="card">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-pen-nib me-2"></i>Site Identity</div>
+                <div class="card-body row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Branding.CompanyName" class="form-label">Company / Organisation Name</label>
+                        <input asp-for="Branding.CompanyName" class="form-control" placeholder="Network24" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Branding.SiteName" class="form-label">Site Name</label>
+                        <input asp-for="Branding.SiteName" class="form-control" placeholder="Main Site" />
+                        <div class="form-text">Displayed in the nav-bar and page title.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Branding.SupportEmail" class="form-label">Support Email</label>
+                        <input asp-for="Branding.SupportEmail" type="email" class="form-control" placeholder="support@example.com" />
+                        <span asp-validation-for="Branding.SupportEmail" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Branding.PrimaryColor" class="form-label">Primary Accent Colour</label>
+                        <div class="input-group">
+                            <input asp-for="Branding.PrimaryColor" type="color" class="form-control form-control-color" style="max-width:3rem;" />
+                            <input asp-for="Branding.PrimaryColor" class="form-control font-monospace" placeholder="#0066CC" id="colorHex" />
+                        </div>
+                        <div class="form-text">Used for nav-bar and badges.</div>
+                    </div>
+                </div>
+                <div class="card-footer text-end">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk me-1"></i>Save Branding
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    // ── Restore active tab from TempData (after redirect) ──
+    const tabEl = document.querySelector('#settingsTabs a[href="#@activeTab"]');
+    if (tabEl) bootstrap.Tab.getOrCreateInstance(tabEl).show();
+
+    // ── Keep tab active on browser back/forward ──
+    document.querySelectorAll('#settingsTabs a[data-bs-toggle="tab"]').forEach(el => {
+        el.addEventListener('shown.bs.tab', e => history.replaceState(null, '', e.target.getAttribute('href')));
+    });
+
+    // ── Show/hide archive dir based on checkbox ──
+    const archChk = document.getElementById('archAfter');
+    const archRow = document.getElementById('archiveDirRow');
+    function toggleArchive() { archRow.style.display = archChk.checked ? '' : 'none'; }
+    if (archChk) { archChk.addEventListener('change', toggleArchive); toggleArchive(); }
+
+    // ── Show/hide key path based on auth method ──
+    const keyRow = document.getElementById('keyPathRow');
+    document.querySelectorAll('input[name="Ssh.AuthMethod"]').forEach(r => {
+        r.addEventListener('change', () => { keyRow.style.display = r.value === 'PublicKey' ? '' : 'none'; });
+    });
+    const currentMethod = document.querySelector('input[name="Ssh.AuthMethod"]:checked');
+    if (keyRow && currentMethod) keyRow.style.display = currentMethod.value === 'PublicKey' ? '' : 'none';
+
+    // ── Show/hide cert path based on HTTPS toggle ──
+    const httpsChk = document.getElementById('enableHttps');
+    const certRow = document.getElementById('certPathRow');
+    function toggleCert() { certRow.style.display = httpsChk.checked ? '' : 'none'; }
+    if (httpsChk) { httpsChk.addEventListener('change', toggleCert); toggleCert(); }
+
+    // ── Entra ID fields show/hide ──
+    const entraToggle = document.getElementById('entraToggle');
+    const entraFields = document.getElementById('entraFields');
+    function toggleEntra() {
+        entraFields.style.display = entraToggle.checked ? '' : 'none';
+    }
+    if (entraToggle) { entraToggle.addEventListener('change', toggleEntra); toggleEntra(); }
+
+    // ── Credential mode — show secret OR managed-identity fields ──
+    const secretFields = document.getElementById('secretFields');
+    const miFields     = document.getElementById('managedIdentityFields');
+    function applyCredMode() {
+        const mode = document.querySelector('input[name="Portal.EntraIdCredentialMode"]:checked')?.value;
+        if (secretFields) secretFields.style.display = mode === 'ManagedIdentity' ? 'none' : '';
+        if (miFields)     miFields.style.display     = mode === 'ManagedIdentity' ? '' : 'none';
+    }
+    document.querySelectorAll('input[name="Portal.EntraIdCredentialMode"]')
+        .forEach(r => r.addEventListener('change', applyCredMode));
+    applyCredMode();
+
+    // ── Show/hide client secret ──
+    const secretInput = document.querySelector('input[name="Portal.EntraIdClientSecret"]');
+    const toggleSecretBtn = document.getElementById('toggleSecret');
+    if (toggleSecretBtn && secretInput) {
+        toggleSecretBtn.addEventListener('click', () => {
+            const isText = secretInput.type === 'text';
+            secretInput.type = isText ? 'password' : 'text';
+            toggleSecretBtn.querySelector('i').className = isText ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+        });
+    }
+
+    // ── Sync colour picker ↔ hex input ──
+    const colorPicker = document.querySelector('input[type="color"][name="Branding.PrimaryColor"]');
+    const colorHex = document.getElementById('colorHex');
+    if (colorPicker && colorHex) {
+        colorPicker.addEventListener('input', () => colorHex.value = colorPicker.value);
+        colorHex.addEventListener('input', () => {
+            if (/^#[0-9a-f]{6}$/i.test(colorHex.value)) colorPicker.value = colorHex.value;
+        });
+    }
+})();
+</script>
+}
