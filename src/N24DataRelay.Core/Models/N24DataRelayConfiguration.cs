@@ -9,6 +9,7 @@ public class N24DataRelayConfiguration
     public ServiceSettings Service { get; set; } = new();
     public WebPortalSettings WebPortal { get; set; } = new();
     public TransferSettings Transfer { get; set; } = new();
+    public SmtpSettings Smtp { get; set; } = new();
 }
 
 public class BrandingSettings
@@ -86,6 +87,10 @@ public class AuthenticationSettings
     public string ConnectionString { get; set; } = "Data Source=/var/lib/n24-data-relay/n24datarelay.db";
     public bool RequireEmailConfirmation { get; set; } = false;
     public bool RequireApproval { get; set; } = true;
+    /// <summary>Number of days before a local-account password expires. 0 = never expires.</summary>
+    public int PasswordExpiryDays { get; set; } = 90;
+    /// <summary>Days before expiry at which a warning banner is shown. 0 = no warning.</summary>
+    public int PasswordExpiryWarningDays { get; set; } = 14;
 }
 
 public class KestrelSettings
@@ -122,6 +127,24 @@ public class SshSettings
     public int KeepAliveInterval { get; set; } = 30;
     public bool Compression { get; set; } = true;
     public bool StrictHostKeyChecking { get; set; } = true;
+}
+
+public class SmtpSettings
+{
+    public bool Enabled { get; set; } = false;
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; } = 587;
+    /// <summary>"None" | "StartTls" | "Ssl" — maps to MailKit SecureSocketOptions.</summary>
+    public string Security { get; set; } = "StartTls";
+    public string Username { get; set; } = string.Empty;
+    /// <summary>
+    /// SMTP password. Prefer the <c>N24DataRelay__Smtp__Password</c> environment variable
+    /// so the secret is never written to the config file.
+    /// </summary>
+    public string Password { get; set; } = string.Empty;
+    public string FromAddress { get; set; } = string.Empty;
+    public string FromName { get; set; } = "N24 Data Relay";
+    public int TimeoutSeconds { get; set; } = 30;
 }
 
 public class SmbSettings

@@ -69,6 +69,10 @@ using (var scope = app.Services.CreateScope())
         ON "TransferRecords" ("SourcePath")
         """);
 
+    // Additive columns on AspNetUsers (ALTER TABLE errors on duplicate columns are silently ignored).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE \"AspNetUsers\" ADD COLUMN \"PasswordLastChangedAt\" TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE \"AspNetUsers\" ADD COLUMN \"MustChangePassword\" INTEGER NOT NULL DEFAULT 0"); } catch { }
+
     // Seed the Admin role so it is available for the first registered user.
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     if (!await roleManager.RoleExistsAsync("Admin"))

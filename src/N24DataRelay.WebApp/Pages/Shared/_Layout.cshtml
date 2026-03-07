@@ -30,6 +30,9 @@
                                     <li><a class="dropdown-item" asp-page="/Admin/Settings">
                                         <i class="fa-solid fa-sliders me-2"></i>Settings
                                     </a></li>
+                                    <li><a class="dropdown-item" asp-page="/Admin/Email">
+                                        <i class="fa-solid fa-envelope me-2"></i>Email / SMTP
+                                    </a></li>
                                     <li><hr class="dropdown-divider"></li>
                                     <li><a class="dropdown-item" asp-page="/Admin/Users">
                                         <i class="fa-solid fa-users-gear me-2"></i>Users
@@ -45,8 +48,20 @@
                 <ul class="navbar-nav">
                     @if (User.Identity?.IsAuthenticated == true)
                     {
-                        <li class="nav-item"><span class="navbar-text text-white me-3">@User.Identity.Name</span></li>
-                        <li class="nav-item"><a class="nav-link" asp-page="/Logout">Logout</a></li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fa-solid fa-circle-user me-1"></i>@User.Identity.Name
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark">
+                                <li><a class="dropdown-item" asp-page="/ChangePassword">
+                                    <i class="fa-solid fa-key me-2"></i>Change Password
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" asp-page="/Logout">
+                                    <i class="fa-solid fa-right-from-bracket me-2"></i>Logout
+                                </a></li>
+                            </ul>
+                        </li>
                     }
                     else
                     {
@@ -57,6 +72,11 @@
             </div>
         </div>
     </nav>
+    @* ── Password expiry warning banner ─────────────────────────────────── *@
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        @await Html.PartialAsync("_PasswordExpiryBanner")
+    }
     <main class="container mt-4">
         @RenderBody()
     </main>

@@ -11,11 +11,28 @@
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
 {
     <div class="alert alert-success alert-dismissible fade show" role="alert">
-        @Model.StatusMessage
+        <i class="fa-solid fa-circle-check me-2"></i>@Model.StatusMessage
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 }
 
+@if (!string.IsNullOrEmpty(Model.ResetLink))
+{
+    <div class="alert alert-warning alert-dismissible" role="alert">
+        <strong><i class="fa-solid fa-link me-2"></i>Reset link — share this with the user (expires in 24 hours):</strong>
+        <div class="input-group mt-2">
+            <input type="text" class="form-control form-control-sm font-monospace" id="resetLinkBox"
+                   value="@Model.ResetLink" readonly />
+            <button class="btn btn-sm btn-outline-secondary" type="button"
+                    onclick="navigator.clipboard.writeText(document.getElementById('resetLinkBox').value)">
+                <i class="fa-solid fa-copy"></i> Copy
+            </button>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@* ── Pending approvals ─────────────────────────────────────────────────── *@
 @if (Model.PendingUsers.Any())
 {
     <div class="card mb-4 border-warning">
@@ -67,6 +84,7 @@ else
     </div>
 }
 
+@* ── All users ─────────────────────────────────────────────────────────── *@
 <div class="card">
     <div class="card-header">
         <i class="fa-solid fa-users me-2"></i>All Users
@@ -79,8 +97,8 @@ else
                     <th>Email</th>
                     <th>Status</th>
                     <th>Role</th>
+                    <th>Password</th>
                     <th>Registered</th>
-                    <th>Approved</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -90,38 +108,39 @@ else
                     <tr class="@(u.IsCurrentUser ? "table-active" : "")">
                         <td>
                             @u.Email
-                            @if (u.IsCurrentUser)
-                            {
-                                <span class="badge bg-secondary ms-1">you</span>
-                            }
+                            @if (u.IsCurrentUser) { <span class="badge bg-secondary ms-1">you</span> }
                         </td>
                         <td>
-                            @if (u.IsApproved)
-                            {
-                                <span class="badge bg-success">Approved</span>
-                            }
-                            else
-                            {
-                                <span class="badge bg-warning text-dark">Pending</span>
-                            }
+                            @if (u.IsApproved) { <span class="badge bg-success">Approved</span> }
+                            else { <span class="badge bg-warning text-dark">Pending</span> }
                         </td>
                         <td>
-                            @if (u.IsAdmin)
-                            {
-                                <span class="badge bg-primary">Admin</span>
+                            @if (u.IsAdmin) { <span class="badge bg-primary">Admin</span> }
+                            else { <span class="badge bg-light text-dark">User</span> }
+                        </td>
+                        <td>
+                            @{
+                                var (badgeClass, badgeText, badgeTitle) = u.PasswordStatus switch
+                                {
+                                    "expired"  => ("bg-danger",              "Expired",
+                                                   u.MustChangePassword ? "Admin forced reset" : "Password expired"),
+                                    "warning"  => ("bg-warning text-dark",   $"Expires in {u.DaysUntilExpiry}d",
+                                                   $"Expiring in {u.DaysUntilExpiry} day(s)"),
+                                    "ok"       => ("bg-success",             u.DaysUntilExpiry.HasValue
+                                                                             ? $"{u.DaysUntilExpiry}d remaining"
+                                                                             : "OK",
+                                                   u.PasswordLastChangedAt.HasValue
+                                                       ? $"Changed {u.PasswordLastChangedAt.Value.ToLocalTime():yyyy-MM-dd}"
+                                                       : "No expiry"),
+                                    _          => ("bg-secondary",           "Not set",
+                                                   "Password change date not recorded")
+                                };
                             }
-                            else
-                            {
-                                <span class="badge bg-light text-dark">User</span>
-                            }
+                            <span class="badge @badgeClass" title="@badgeTitle">
+                                <i class="fa-solid fa-key me-1"></i>@badgeText
+                            </span>
                         </td>
                         <td><small>@u.RegistrationDate.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
-                        <td>
-                            @if (u.ApprovedDate.HasValue)
-                            {
-                                <small title="by @u.ApprovedBy">@u.ApprovedDate.Value.ToLocalTime().ToString("yyyy-MM-dd")</small>
-                            }
-                        </td>
                         <td>
                             @if (!u.IsCurrentUser)
                             {
@@ -149,6 +168,21 @@ else
                                     <button class="btn btn-sm @(u.IsAdmin ? "btn-outline-secondary" : "btn-outline-primary") me-1"
                                             type="submit" title="@(u.IsAdmin ? "Remove Admin" : "Make Admin")">
                                         <i class="fa-solid @(u.IsAdmin ? "fa-user-minus" : "fa-user-shield")"></i>
+                                    </button>
+                                </form>
+                                <form method="post" asp-page-handler="ForceReset" class="d-inline"
+                                      onsubmit="return confirm('Force a password reset for @u.Email?')">
+                                    <input type="hidden" name="userId" value="@u.Id" />
+                                    <button class="btn btn-sm btn-outline-info me-1" type="submit"
+                                            title="Force password reset — generates a reset link">
+                                        <i class="fa-solid fa-key"></i>
+                                    </button>
+                                </form>
+                                <form method="post" asp-page-handler="GenerateResetLink" class="d-inline">
+                                    <input type="hidden" name="userId" value="@u.Id" />
+                                    <button class="btn btn-sm btn-outline-secondary me-1" type="submit"
+                                            title="Generate a reset link to share manually">
+                                        <i class="fa-solid fa-link"></i>
                                     </button>
                                 </form>
                                 <form method="post" asp-page-handler="Reject" class="d-inline"

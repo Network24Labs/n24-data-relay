@@ -336,6 +336,18 @@
                             <label class="form-check-label" asp-for="Portal.RequireApproval">Require admin approval for new accounts</label>
                         </div>
                     </div>
+                    <div class="col-md-4">
+                        <label asp-for="Portal.PasswordExpiryDays" class="form-label">Password Expiry (days)</label>
+                        <input asp-for="Portal.PasswordExpiryDays" type="number" class="form-control" min="0" max="3650" />
+                        <div class="form-text">0 = passwords never expire.</div>
+                        <span asp-validation-for="Portal.PasswordExpiryDays" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Portal.PasswordExpiryWarningDays" class="form-label">Expiry Warning (days before)</label>
+                        <input asp-for="Portal.PasswordExpiryWarningDays" type="number" class="form-control" min="0" max="365" />
+                        <div class="form-text">0 = no warning banner.</div>
+                        <span asp-validation-for="Portal.PasswordExpiryWarningDays" class="text-danger small"></span>
+                    </div>
                 </div>
             </div>
 

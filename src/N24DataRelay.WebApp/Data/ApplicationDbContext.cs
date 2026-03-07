@@ -34,6 +34,10 @@ public class ApplicationUser : IdentityUser
     public DateTime? ApprovedDate { get; set; }
     public string? ApprovedBy { get; set; }
     public DateTime RegistrationDate { get; set; } = DateTime.UtcNow;
+    /// <summary>UTC timestamp of the last successful password change or initial registration.</summary>
+    public DateTime? PasswordLastChangedAt { get; set; }
+    /// <summary>When true the user must change their password on next login.</summary>
+    public bool MustChangePassword { get; set; }
 }
 
 /// <summary>

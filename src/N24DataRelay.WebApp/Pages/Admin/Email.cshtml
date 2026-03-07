@@ -1,0 +1,265 @@
+@page
+@model N24DataRelay.WebApp.Pages.Admin.EmailModel
+@{
+    ViewData["Title"] = "Email Configuration";
+}
+
+<div class="d-flex align-items-center mb-4 gap-2">
+    <i class="fa-solid fa-envelope fa-lg text-primary"></i>
+    <h1 class="h3 mb-0">Email / SMTP Configuration</h1>
+    @{
+        var active = Model.Smtp.Enabled && !string.IsNullOrWhiteSpace(Model.Smtp.Host);
+    }
+    <span class="badge @(active ? "bg-success" : "bg-secondary") ms-auto fs-6 fw-normal py-2 px-3">
+        <i class="fa-solid fa-@(active ? "circle-check" : "circle-xmark") me-1"></i>
+        @(active ? "SMTP active" : "Using log-only stub")
+    </span>
+</div>
+
+@if (Model.StatusMessage != null)
+{
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="fa-solid fa-circle-check me-2"></i>@Model.StatusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (!active)
+{
+    <div class="alert alert-info">
+        <i class="fa-solid fa-circle-info me-2"></i>
+        SMTP is not yet configured. Password reset emails are currently written to the
+        application log (<code>journalctl -u n24-data-relay</code>). Configure a relay below
+        to enable real delivery.
+    </div>
+}
+
+<form method="post" asp-page-handler="Save" id="smtpForm">
+
+    @* ══ Connection card ════════════════════════════════════════════════════ *@
+    <div class="card mb-4">
+        <div class="card-header fw-semibold">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" asp-for="Smtp.Enabled" id="smtpEnabled" />
+                <label class="form-check-label fw-semibold" asp-for="Smtp.Enabled">
+                    Enable SMTP Email Delivery
+                </label>
+            </div>
+        </div>
+        <div class="card-body row g-3" id="smtpFields">
+
+            @* ── Server ── *@
+            <div class="col-md-7">
+                <label asp-for="Smtp.Host" class="form-label">SMTP Host <span class="text-danger">*</span></label>
+                <input asp-for="Smtp.Host" class="form-control font-monospace"
+                       placeholder="smtp.office365.com" />
+                <span asp-validation-for="Smtp.Host" class="text-danger small"></span>
+            </div>
+            <div class="col-md-2">
+                <label asp-for="Smtp.Port" class="form-label">Port</label>
+                <input asp-for="Smtp.Port" type="number" class="form-control" min="1" max="65535" />
+                <span asp-validation-for="Smtp.Port" class="text-danger small"></span>
+            </div>
+            <div class="col-md-3">
+                <label asp-for="Smtp.Security" class="form-label">Security</label>
+                <select asp-for="Smtp.Security" class="form-select" id="securitySelect">
+                    <option value="StartTls">STARTTLS (recommended)</option>
+                    <option value="Ssl">SSL/TLS</option>
+                    <option value="None">None (plaintext)</option>
+                </select>
+            </div>
+
+            @* ── Credentials ── *@
+            <div class="col-md-6">
+                <label asp-for="Smtp.Username" class="form-label">Username</label>
+                <input asp-for="Smtp.Username" class="form-control font-monospace"
+                       placeholder="relay@example.com" autocomplete="off" />
+                <div class="form-text">Leave blank for unauthenticated relay.</div>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Smtp.Password" class="form-label">Password</label>
+                <div class="input-group">
+                    <input asp-for="Smtp.Password" type="password" class="form-control font-monospace"
+                           placeholder="Leave blank to keep existing" autocomplete="new-password" />
+                    <button class="btn btn-outline-secondary" type="button" id="toggleSmtpPwd" title="Show/hide">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </div>
+                <div class="form-text d-flex align-items-center gap-2 mt-1">
+                    Current status:
+                    @{
+                        var pwdBadge = Model.PasswordStatus == "not set" ? "bg-warning text-dark" : "bg-success";
+                    }
+                    <span class="badge @pwdBadge">@Model.PasswordStatus</span>
+                    @if (Model.PasswordStatus != "set via environment variable")
+                    {
+                        <span class="text-muted small">— Prefer <code>N24DataRelay__Smtp__Password</code> env var</span>
+                    }
+                </div>
+            </div>
+
+            @* ── From ── *@
+            <div class="col-md-6">
+                <label asp-for="Smtp.FromAddress" class="form-label">From Address <span class="text-danger">*</span></label>
+                <input asp-for="Smtp.FromAddress" type="email" class="form-control font-monospace"
+                       placeholder="noreply@example.com" />
+                <span asp-validation-for="Smtp.FromAddress" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Smtp.FromName" class="form-label">From Display Name</label>
+                <input asp-for="Smtp.FromName" class="form-control" placeholder="N24 Data Relay" />
+            </div>
+            <div class="col-md-2">
+                <label asp-for="Smtp.TimeoutSeconds" class="form-label">Timeout (s)</label>
+                <input asp-for="Smtp.TimeoutSeconds" type="number" class="form-control" min="5" max="120" />
+            </div>
+
+            @* ── Quick presets ── *@
+            <div class="col-12">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <small class="text-muted">Quick presets:</small>
+                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn"
+                            data-host="smtp.office365.com" data-port="587" data-sec="StartTls">
+                        <i class="fa-brands fa-microsoft me-1"></i>Office 365
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn"
+                            data-host="smtp.gmail.com" data-port="587" data-sec="StartTls">
+                        <i class="fa-brands fa-google me-1"></i>Gmail
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn"
+                            data-host="smtp.sendgrid.net" data-port="587" data-sec="StartTls">
+                        SendGrid
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn"
+                            data-host="smtp.mailgun.org" data-port="587" data-sec="StartTls">
+                        Mailgun
+                    </button>
+                </div>
+            </div>
+
+        </div>
+        <div class="card-footer text-end">
+            <button type="submit" class="btn btn-primary">
+                <i class="fa-solid fa-floppy-disk me-1"></i>Save SMTP Settings
+            </button>
+        </div>
+    </div>
+
+</form>
+
+@* ══ Test card (separate form — does NOT save) ══════════════════════════════ *@
+<div class="card">
+    <div class="card-header fw-semibold">
+        <i class="fa-solid fa-paper-plane me-2"></i>Send Test Email
+        <span class="badge bg-secondary ms-2">uses the values above, not the saved config</span>
+    </div>
+    <div class="card-body">
+
+        @if (Model.TestRan)
+        {
+            @if (Model.TestResult == null)
+            {
+                <div class="alert alert-success">
+                    <i class="fa-solid fa-circle-check me-2"></i>
+                    <strong>Test email sent successfully.</strong> Check the inbox at <strong>@Model.TestRecipient</strong>.
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-danger">
+                    <i class="fa-solid fa-circle-exclamation me-2"></i>
+                    <strong>Delivery failed:</strong>
+                    <code class="d-block mt-1">@Model.TestResult</code>
+                </div>
+            }
+        }
+
+        <form method="post" asp-page-handler="Test">
+            @* Mirror all SMTP fields so the test uses current form values *@
+            <input type="hidden" asp-for="Smtp.Enabled" />
+            <input type="hidden" asp-for="Smtp.Host" />
+            <input type="hidden" asp-for="Smtp.Port" />
+            <input type="hidden" asp-for="Smtp.Security" />
+            <input type="hidden" asp-for="Smtp.Username" />
+            <input type="hidden" asp-for="Smtp.Password" />
+            <input type="hidden" asp-for="Smtp.FromAddress" />
+            <input type="hidden" asp-for="Smtp.FromName" />
+            <input type="hidden" asp-for="Smtp.TimeoutSeconds" />
+
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label for="TestRecipient" class="form-label">Test recipient address</label>
+                    <input name="TestRecipient" id="TestRecipient" type="email" class="form-control"
+                           value="@Model.TestRecipient" placeholder="admin@example.com" />
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="fa-solid fa-paper-plane me-1"></i>Send Test
+                    </button>
+                </div>
+            </div>
+            <div class="form-text mt-1">
+                The test uses the values currently entered in the form above — save first if you want to
+                test the persisted configuration.
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    // ── Show/hide SMTP fields based on Enabled toggle ──
+    const enabledChk = document.getElementById('smtpEnabled');
+    const smtpFields = document.getElementById('smtpFields');
+    function toggleFields() { smtpFields.style.opacity = enabledChk.checked ? '1' : '0.4'; }
+    if (enabledChk) { enabledChk.addEventListener('change', toggleFields); toggleFields(); }
+
+    // ── Show/hide password ──
+    const pwdInput = document.querySelector('input[name="Smtp.Password"]');
+    const toggleBtn = document.getElementById('toggleSmtpPwd');
+    if (toggleBtn && pwdInput) {
+        toggleBtn.addEventListener('click', () => {
+            const show = pwdInput.type === 'text';
+            pwdInput.type = show ? 'password' : 'text';
+            toggleBtn.querySelector('i').className = show ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+        });
+    }
+
+    // ── Auto-update port when security changes ──
+    const secSel = document.getElementById('securitySelect');
+    const portIn = document.querySelector('input[name="Smtp.Port"]');
+    if (secSel && portIn) {
+        secSel.addEventListener('change', () => {
+            if (secSel.value === 'Ssl') portIn.value = 465;
+            else if (secSel.value === 'None') portIn.value = 25;
+            else portIn.value = 587;
+        });
+    }
+
+    // ── Quick presets ──
+    const hostIn = document.querySelector('input[name="Smtp.Host"]');
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (hostIn) hostIn.value = btn.dataset.host;
+            if (portIn) portIn.value = btn.dataset.port;
+            if (secSel) secSel.value = btn.dataset.sec;
+        });
+    });
+
+    // ── Mirror editable fields into the test form hidden inputs ──
+    // So "Send Test" always uses the values currently typed, not the saved config.
+    function syncTestForm() {
+        document.querySelectorAll('#smtpForm input, #smtpForm select').forEach(src => {
+            const name = src.name;
+            if (!name) return;
+            const tgt = document.querySelector(`form[method="post"] input[name="${name}"][type="hidden"]`);
+            if (tgt) tgt.value = src.type === 'checkbox' ? (src.checked ? 'true' : 'false') : src.value;
+        });
+    }
+    document.getElementById('smtpForm')?.addEventListener('input', syncTestForm);
+    document.getElementById('smtpForm')?.addEventListener('change', syncTestForm);
+    syncTestForm(); // run once on load
+})();
+</script>
+}

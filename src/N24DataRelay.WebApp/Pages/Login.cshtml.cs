@@ -71,14 +71,32 @@ public class LoginModel : PageModel
 
         if (result.Succeeded)
         {
-            // Enforce the approval gate — sign out immediately if not yet approved.
             var user = await _userManager.FindByEmailAsync(Input.Email);
+
+            // Enforce the approval gate
             if (user != null && !user.IsApproved)
             {
                 await _signInManager.SignOutAsync();
                 ErrorMessage = "Your account is pending approval by an administrator.";
                 return Page();
             }
+
+            if (user != null)
+            {
+                // Force change if explicitly flagged by an admin
+                if (user.MustChangePassword)
+                    return RedirectToPage("/ChangePassword", new { forced = true });
+
+                // Enforce password expiry
+                var expiryDays = _configMonitor.CurrentValue.WebPortal.Authentication.PasswordExpiryDays;
+                if (expiryDays > 0 && user.PasswordLastChangedAt.HasValue)
+                {
+                    var expiredAt = user.PasswordLastChangedAt.Value.AddDays(expiryDays);
+                    if (DateTime.UtcNow >= expiredAt)
+                        return RedirectToPage("/ChangePassword", new { forced = true });
+                }
+            }
+
             return LocalRedirect(returnUrl);
         }
 

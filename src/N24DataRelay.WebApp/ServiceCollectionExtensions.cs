@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
 using N24DataRelay.Core.Constants;
 using N24DataRelay.Core.Interfaces;
@@ -74,6 +75,16 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<FileUploadService>();
         services.AddSingleton<ConfigWriterService>();
+        // Email sender: uses SMTP when enabled+configured, falls back to log-only stub.
+        services.AddTransient<LoggingEmailSender>();
+        services.AddTransient<SmtpEmailSender>();
+        services.AddTransient<IEmailSender>(sp =>
+        {
+            var cfg = sp.GetRequiredService<IOptionsMonitor<N24DataRelayConfiguration>>().CurrentValue;
+            if (cfg.Smtp.Enabled && !string.IsNullOrWhiteSpace(cfg.Smtp.Host))
+                return sp.GetRequiredService<SmtpEmailSender>();
+            return sp.GetRequiredService<LoggingEmailSender>();
+        });
 
         // SQLite-backed tracker: persists records across restarts (IHostedService for startup load).
         services.AddSingleton<SqliteTransferTracker>();

@@ -71,7 +71,8 @@ public class RegisterModel : PageModel
             UserName = Input.Email,
             Email = Input.Email,
             RegistrationDate = DateTime.UtcNow,
-            IsApproved = isFirstUser || !requireApproval
+            IsApproved = isFirstUser || !requireApproval,
+            PasswordLastChangedAt = DateTime.UtcNow
         };
 
         var result = await _userManager.CreateAsync(user, Input.Password);

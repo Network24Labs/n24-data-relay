@@ -82,6 +82,8 @@ public class SettingsModel : PageModel
         [Required] public string UploadDirectory { get; set; } = "";
         public bool EnableLocalAccounts { get; set; } = true;
         public bool RequireApproval { get; set; } = true;
+        [Range(0, 3650)] public int PasswordExpiryDays { get; set; } = 90;
+        [Range(0, 365)]  public int PasswordExpiryWarningDays { get; set; } = 14;
 
         // ── Entra ID (Azure AD) ──────────────────────────────────────────────
         public bool EnableEntraId { get; set; }
@@ -179,6 +181,8 @@ public class SettingsModel : PageModel
             UploadDirectory = c.Paths.UploadDirectory,
             EnableLocalAccounts = c.WebPortal.Authentication.EnableLocalAccounts,
             RequireApproval = c.WebPortal.Authentication.RequireApproval,
+            PasswordExpiryDays = c.WebPortal.Authentication.PasswordExpiryDays,
+            PasswordExpiryWarningDays = c.WebPortal.Authentication.PasswordExpiryWarningDays,
             EnableEntraId = c.WebPortal.Authentication.EnableEntraId,
             // Entra ID credentials from raw IConfiguration (top-level AzureAd section)
             EntraIdInstance          = _rawConfig["AzureAd:Instance"]     ?? "https://login.microsoftonline.com/",
@@ -286,6 +290,8 @@ public class SettingsModel : PageModel
         cfg.Paths.UploadDirectory = Portal.UploadDirectory.Trim();
         cfg.WebPortal.Authentication.EnableLocalAccounts = Portal.EnableLocalAccounts;
         cfg.WebPortal.Authentication.RequireApproval = Portal.RequireApproval;
+        cfg.WebPortal.Authentication.PasswordExpiryDays = Portal.PasswordExpiryDays;
+        cfg.WebPortal.Authentication.PasswordExpiryWarningDays = Portal.PasswordExpiryWarningDays;
         cfg.WebPortal.Authentication.EnableEntraId = Portal.EnableEntraId;
 
         await _writer.WriteAsync(cfg);
@@ -343,7 +349,7 @@ public class SettingsModel : PageModel
         var c = _config.CurrentValue;
         if (active != "ssh") Ssh = new SshInput { Host = c.Transfer.Ssh.Host, Port = c.Transfer.Ssh.Port, Username = c.Transfer.Ssh.Username, AuthMethod = c.Transfer.Ssh.AuthMethod, PrivateKeyPath = c.Transfer.Ssh.PrivateKeyPath, DestinationPath = c.Transfer.Ssh.DestinationPath, RemoteServerType = c.Transfer.Ssh.RemoteServerType, Compression = c.Transfer.Ssh.Compression, ConnectionTimeout = c.Transfer.Ssh.ConnectionTimeout, OperationTimeout = c.Transfer.Ssh.OperationTimeout, StrictHostKeyChecking = c.Transfer.Ssh.StrictHostKeyChecking };
         if (active != "service") Service = new ServiceInput { WatchDirectory = c.Service.WatchDirectory, TransferMethod = c.Service.TransferMethod, DeleteAfterTransfer = c.Service.DeleteAfterTransfer, ArchiveAfterTransfer = c.Service.ArchiveAfterTransfer, ArchiveDirectory = c.Service.ArchiveDirectory, VerifyTransfer = c.Service.VerifyTransfer, RetryAttempts = c.Service.RetryAttempts, RetryDelaySeconds = c.Service.RetryDelaySeconds, RetryBackoffMultiplier = c.Service.RetryBackoffMultiplier, FileStabilitySeconds = c.Service.FileStabilitySeconds, ProcessingIntervalSeconds = c.Service.ProcessingIntervalSeconds };
-        if (active != "portal") Portal = new PortalInput { HttpPort = c.WebPortal.Kestrel.HttpPort, HttpsPort = c.WebPortal.Kestrel.HttpsPort, EnableHttps = c.WebPortal.Kestrel.EnableHttps, CertificatePath = c.WebPortal.Kestrel.CertificatePath, MaxFileSizeGb = Math.Round(c.WebPortal.MaxFileSizeBytes / (1024.0 * 1024 * 1024), 2), BlockedExtensions = string.Join(", ", c.WebPortal.BlockedFileExtensions ?? new()), EnableUploadToTransfer = c.WebPortal.EnableUploadToTransfer, UploadDirectory = c.Paths.UploadDirectory, EnableLocalAccounts = c.WebPortal.Authentication.EnableLocalAccounts, RequireApproval = c.WebPortal.Authentication.RequireApproval, EnableEntraId = c.WebPortal.Authentication.EnableEntraId, EntraIdInstance = _rawConfig["AzureAd:Instance"] ?? "https://login.microsoftonline.com/", EntraIdTenantId = _rawConfig["AzureAd:TenantId"] ?? "", EntraIdClientId = _rawConfig["AzureAd:ClientId"] ?? "", EntraIdCallbackPath = _rawConfig["AzureAd:CallbackPath"] ?? "/signin-oidc", EntraIdCredentialMode = _rawConfig["AzureAd:ClientCredentials:0:SourceType"] == "SignedAssertionFromManagedIdentity" ? "ManagedIdentity" : "Secret", ManagedIdentityClientId = _rawConfig["AzureAd:ClientCredentials:0:ManagedIdentityClientId"] };
+        if (active != "portal") Portal = new PortalInput { HttpPort = c.WebPortal.Kestrel.HttpPort, HttpsPort = c.WebPortal.Kestrel.HttpsPort, EnableHttps = c.WebPortal.Kestrel.EnableHttps, CertificatePath = c.WebPortal.Kestrel.CertificatePath, MaxFileSizeGb = Math.Round(c.WebPortal.MaxFileSizeBytes / (1024.0 * 1024 * 1024), 2), BlockedExtensions = string.Join(", ", c.WebPortal.BlockedFileExtensions ?? new()), EnableUploadToTransfer = c.WebPortal.EnableUploadToTransfer, UploadDirectory = c.Paths.UploadDirectory, EnableLocalAccounts = c.WebPortal.Authentication.EnableLocalAccounts, RequireApproval = c.WebPortal.Authentication.RequireApproval, PasswordExpiryDays = c.WebPortal.Authentication.PasswordExpiryDays, PasswordExpiryWarningDays = c.WebPortal.Authentication.PasswordExpiryWarningDays, EnableEntraId = c.WebPortal.Authentication.EnableEntraId, EntraIdInstance = _rawConfig["AzureAd:Instance"] ?? "https://login.microsoftonline.com/", EntraIdTenantId = _rawConfig["AzureAd:TenantId"] ?? "", EntraIdClientId = _rawConfig["AzureAd:ClientId"] ?? "", EntraIdCallbackPath = _rawConfig["AzureAd:CallbackPath"] ?? "/signin-oidc", EntraIdCredentialMode = _rawConfig["AzureAd:ClientCredentials:0:SourceType"] == "SignedAssertionFromManagedIdentity" ? "ManagedIdentity" : "Secret", ManagedIdentityClientId = _rawConfig["AzureAd:ClientCredentials:0:ManagedIdentityClientId"] };
         if (active != "branding") Branding = new BrandingInput { CompanyName = c.Branding.CompanyName, SiteName = c.Branding.SiteName, SupportEmail = c.Branding.SupportEmail, PrimaryColor = c.Branding.Theme.PrimaryColor };
     }
 }

@@ -1,7 +1,12 @@
+using System.Text;
+using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Options;
+using N24DataRelay.Core.Models;
 using N24DataRelay.WebApp.Data;
 
 namespace N24DataRelay.WebApp.Pages.Admin;
@@ -11,11 +16,16 @@ public class UsersModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<IdentityRole> _roleManager;
+    private readonly IOptionsMonitor<N24DataRelayConfiguration> _config;
 
-    public UsersModel(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
+    public UsersModel(
+        UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager,
+        IOptionsMonitor<N24DataRelayConfiguration> config)
     {
         _userManager = userManager;
         _roleManager = roleManager;
+        _config = config;
     }
 
     public List<UserViewModel> PendingUsers { get; set; } = new();
@@ -23,6 +33,10 @@ public class UsersModel : PageModel
 
     [TempData]
     public string? StatusMessage { get; set; }
+
+    /// <summary>A generated reset link shown to the admin after OnPostGenerateResetLinkAsync.</summary>
+    [TempData]
+    public string? ResetLink { get; set; }
 
     public class UserViewModel
     {
@@ -34,11 +48,19 @@ public class UsersModel : PageModel
         public string? ApprovedBy { get; set; }
         public bool IsAdmin { get; set; }
         public bool IsCurrentUser { get; set; }
+        public DateTime? PasswordLastChangedAt { get; set; }
+        public bool MustChangePassword { get; set; }
+        /// <summary>"ok" | "warning" | "expired" | "never"</summary>
+        public string PasswordStatus { get; set; } = "never";
+        public int? DaysUntilExpiry { get; set; }
     }
 
     public async Task OnGetAsync()
     {
         var currentUserId = _userManager.GetUserId(User);
+        var expiryDays = _config.CurrentValue.WebPortal.Authentication.PasswordExpiryDays;
+        var warningDays = _config.CurrentValue.WebPortal.Authentication.PasswordExpiryWarningDays;
+
         var users = _userManager.Users
             .OrderByDescending(u => u.RegistrationDate)
             .ToList();
@@ -49,6 +71,29 @@ public class UsersModel : PageModel
         foreach (var user in users)
         {
             var isAdmin = await _userManager.IsInRoleAsync(user, "Admin");
+
+            string pwStatus = "never";
+            int? daysUntil = null;
+            if (user.MustChangePassword)
+            {
+                pwStatus = "expired";
+            }
+            else if (expiryDays > 0 && user.PasswordLastChangedAt.HasValue)
+            {
+                var expiredAt = user.PasswordLastChangedAt.Value.AddDays(expiryDays);
+                daysUntil = (int)Math.Ceiling((expiredAt - DateTime.UtcNow).TotalDays);
+                if (daysUntil <= 0)
+                    pwStatus = "expired";
+                else if (warningDays > 0 && daysUntil <= warningDays)
+                    pwStatus = "warning";
+                else
+                    pwStatus = "ok";
+            }
+            else if (expiryDays == 0)
+            {
+                pwStatus = "ok"; // expiry disabled globally
+            }
+
             var vm = new UserViewModel
             {
                 Id = user.Id,
@@ -58,7 +103,11 @@ public class UsersModel : PageModel
                 ApprovedDate = user.ApprovedDate,
                 ApprovedBy = user.ApprovedBy,
                 IsAdmin = isAdmin,
-                IsCurrentUser = user.Id == currentUserId
+                IsCurrentUser = user.Id == currentUserId,
+                PasswordLastChangedAt = user.PasswordLastChangedAt,
+                MustChangePassword = user.MustChangePassword,
+                PasswordStatus = pwStatus,
+                DaysUntilExpiry = daysUntil
             };
             AllUsers.Add(vm);
             if (!user.IsApproved)
@@ -134,6 +183,52 @@ public class UsersModel : PageModel
         await _userManager.UpdateAsync(user);
 
         StatusMessage = $"Access revoked for {user.Email}.";
+        return RedirectToPage();
+    }
+
+    /// <summary>
+    /// Flags MustChangePassword and generates a one-time reset link for the admin to share manually.
+    /// </summary>
+    public async Task<IActionResult> OnPostForceResetAsync(string userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null) return NotFound();
+
+        user.MustChangePassword = true;
+        await _userManager.UpdateAsync(user);
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var link = Url.Page(
+            "/ResetPassword",
+            pageHandler: null,
+            values: new { token = encodedToken, email = user.Email },
+            protocol: Request.Scheme)!;
+
+        ResetLink = link;
+        StatusMessage = $"Password reset required for {user.Email}. Copy the link below and share it with the user.";
+        return RedirectToPage();
+    }
+
+    /// <summary>
+    /// Generates a fresh reset link without flagging MustChangePassword — for use when
+    /// the user has already requested a reset but needs the link resent manually.
+    /// </summary>
+    public async Task<IActionResult> OnPostGenerateResetLinkAsync(string userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null) return NotFound();
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var link = Url.Page(
+            "/ResetPassword",
+            pageHandler: null,
+            values: new { token = encodedToken, email = user.Email },
+            protocol: Request.Scheme)!;
+
+        ResetLink = link;
+        StatusMessage = $"Reset link generated for {user.Email}. Copy and send it to the user — it expires in 24 hours.";
         return RedirectToPage();
     }
 }
