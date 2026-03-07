@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>N24DataRelay</RootNamespace>
+    <AssemblyName>N24DataRelay</AssemblyName>
+    <PackageId>N24DataRelay</PackageId>
+    <Version>0.1.0</Version>
+    <PackageLicenseExpression>LGPL-3.0-or-later</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <ProjectReference Include="..\N24DataRelay.Core\N24DataRelay.Core.csproj" />
+    <ProjectReference Include="..\N24DataRelay.Watcher\N24DataRelay.Watcher.csproj" />
+    <ProjectReference Include="..\N24DataRelay.WebApp\N24DataRelay.WebApp.csproj" />
+  </ItemGroup>
+
+</Project>

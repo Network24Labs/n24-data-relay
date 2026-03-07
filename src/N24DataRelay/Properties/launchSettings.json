@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "N24DataRelay": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home";
+}
+
+<div class="text-center">
+    <h1 class="display-4">N24 Data Relay</h1>
+    <p class="lead">Secure file upload and transfer</p>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <p><a class="btn btn-primary" asp-page="/Upload">Upload files</a></p>
+    }
+    else
+    {
+        <p><a class="btn btn-primary" asp-page="/Login">Sign in</a> or <a asp-page="/Register">register</a> to upload files.</p>
+    }
+</div>
