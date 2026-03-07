@@ -1,0 +1,162 @@
+@page
+@model TransfersModel
+@{
+    ViewData["Title"] = "Transfer Status";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Transfer Status</h4>
+    <span id="connectionBadge" class="badge bg-secondary">Connecting…</span>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0" id="transferTable">
+            <thead class="table-dark">
+                <tr>
+                    <th>File</th>
+                    <th>Uploaded by</th>
+                    <th>Status</th>
+                    <th>Queued</th>
+                    <th>Duration</th>
+                    <th>Destination</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody id="transferBody">
+                @foreach (var r in Model.Recent)
+                {
+                    <tr id="row-@r.Id" class="@StatusRowClass(r.Status)">
+                        <td>@r.FileName</td>
+                        <td>@r.UploadedBy</td>
+                        <td><span class="badge @StatusBadgeClass(r.Status)">@r.Status</span></td>
+                        <td><small>@r.QueuedAt.ToLocalTime().ToString("HH:mm:ss")</small></td>
+                        <td><small>@FormatDuration(r.DurationMs)</small></td>
+                        <td><small class="text-truncate d-inline-block" style="max-width:200px">@r.DestinationPath</small></td>
+                        <td><small class="text-danger">@r.ErrorMessage</small></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!Model.Recent.Any())
+        {
+            <p class="text-muted p-3 mb-0">No transfers yet. <a asp-page="/Upload">Upload a file</a> to get started.</p>
+        }
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const statusBadge = {
+        "Queued": "bg-secondary",
+        "Transferring": "bg-primary",
+        "Completed": "bg-success",
+        "Failed": "bg-danger",
+        "Archived": "bg-info"
+    };
+    const rowClass = {
+        "Queued": "",
+        "Transferring": "table-primary",
+        "Completed": "table-success",
+        "Failed": "table-danger",
+        "Archived": "table-info"
+    };
+
+    function formatDuration(ms) {
+        if (ms == null) return "";
+        return ms < 1000 ? ms + "ms" : (ms / 1000).toFixed(1) + "s";
+    }
+
+    function upsertRow(r) {
+        let row = document.getElementById("row-" + r.id);
+        const tableBody = document.getElementById("transferBody");
+        const noTransfersMsg = tableBody.closest(".card-body").querySelector("p.text-muted");
+        if (noTransfersMsg) noTransfersMsg.remove();
+
+        const badge = `<span class="badge ${statusBadge[r.status] || 'bg-secondary'}">${r.status}</span>`;
+        const duration = formatDuration(r.durationMs);
+        const dest = r.destinationPath ? `<small class="text-truncate d-inline-block" style="max-width:200px">${r.destinationPath}</small>` : "";
+        const err = r.errorMessage ? `<small class="text-danger">${r.errorMessage}</small>` : "";
+        const queued = r.queuedAt ? new Date(r.queuedAt).toLocaleTimeString() : "";
+
+        if (row) {
+            row.className = rowClass[r.status] || "";
+            row.cells[2].innerHTML = badge;
+            row.cells[4].innerHTML = `<small>${duration}</small>`;
+            row.cells[5].innerHTML = dest;
+            row.cells[6].innerHTML = err;
+        } else {
+            const tr = document.createElement("tr");
+            tr.id = "row-" + r.id;
+            tr.className = rowClass[r.status] || "";
+            tr.innerHTML = `
+                <td>${r.fileName || ""}</td>
+                <td>${r.uploadedBy || ""}</td>
+                <td>${badge}</td>
+                <td><small>${queued}</small></td>
+                <td><small>${duration}</small></td>
+                <td>${dest}</td>
+                <td>${err}</td>`;
+            tableBody.insertBefore(tr, tableBody.firstChild);
+        }
+    }
+
+    const conn = new signalR.HubConnectionBuilder()
+        .withUrl("/hubs/transfer")
+        .withAutomaticReconnect()
+        .build();
+
+    conn.on("transferStatus", r => upsertRow(r));
+
+    function refreshRecent() {
+        conn.invoke("GetRecent")
+            .then(list => list.forEach(r => upsertRow(r)))
+            .catch(console.error);
+    }
+
+    conn.onreconnecting(() => {
+        document.getElementById("connectionBadge").textContent = "Reconnecting…";
+        document.getElementById("connectionBadge").className = "badge bg-warning";
+    });
+    conn.onreconnected(() => {
+        document.getElementById("connectionBadge").textContent = "Live";
+        document.getElementById("connectionBadge").className = "badge bg-success";
+        refreshRecent();
+    });
+    conn.onclose(() => {
+        document.getElementById("connectionBadge").textContent = "Disconnected";
+        document.getElementById("connectionBadge").className = "badge bg-danger";
+    });
+
+    conn.start().then(() => {
+        document.getElementById("connectionBadge").textContent = "Live";
+        document.getElementById("connectionBadge").className = "badge bg-success";
+        refreshRecent();
+    }).catch(err => {
+        document.getElementById("connectionBadge").textContent = "Error";
+        document.getElementById("connectionBadge").className = "badge bg-danger";
+        console.error(err);
+    });
+</script>
+}
+
+@functions {
+    static string StatusRowClass(N24DataRelay.Core.Models.TransferStatus s) => s switch {
+        N24DataRelay.Core.Models.TransferStatus.Transferring => "table-primary",
+        N24DataRelay.Core.Models.TransferStatus.Completed    => "table-success",
+        N24DataRelay.Core.Models.TransferStatus.Failed       => "table-danger",
+        N24DataRelay.Core.Models.TransferStatus.Archived     => "table-info",
+        _ => ""
+    };
+    static string StatusBadgeClass(N24DataRelay.Core.Models.TransferStatus s) => s switch {
+        N24DataRelay.Core.Models.TransferStatus.Transferring => "bg-primary",
+        N24DataRelay.Core.Models.TransferStatus.Completed    => "bg-success",
+        N24DataRelay.Core.Models.TransferStatus.Failed       => "bg-danger",
+        N24DataRelay.Core.Models.TransferStatus.Archived     => "bg-info",
+        _ => "bg-secondary"
+    };
+    static string FormatDuration(long? ms) {
+        if (ms == null) return "";
+        return ms < 1000 ? $"{ms}ms" : $"{ms / 1000.0:F1}s";
+    }
+}

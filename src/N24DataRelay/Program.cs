@@ -19,10 +19,14 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    foreach (var dir in new[] { "data", "data/uploads", "data/uploads/transfer", "data/archive", "data/logs", "data/temp" })
+    // Use content root (host project dir) so "data" lives in one place regardless of process CWD
+    var baseDir = app.Environment.ContentRootPath;
+    foreach (var rel in new[] { "data", "data/uploads", "data/uploads/transfer", "data/archive", "data/logs", "data/temp" })
     {
-        Directory.CreateDirectory(dir);
+        Directory.CreateDirectory(Path.Combine(baseDir, rel));
     }
+    // Resolve relative paths (e.g. config "data/uploads/transfer") from content root
+    Environment.CurrentDirectory = baseDir;
 }
 
 using (var scope = app.Services.CreateScope())

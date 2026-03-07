@@ -13,4 +13,6 @@ public class UploadResult
     public string? ErrorMessage { get; set; }
     public bool RequiresTransfer { get; set; }
     public string? Notes { get; set; }
+    /// <summary>ID of the ITransferTracker record created at upload time (set when RequiresTransfer = true).</summary>
+    public string? TrackerId { get; set; }
 }

@@ -15,22 +15,28 @@ public sealed class TransferWorker : BackgroundService
     private readonly IFileWatcher _fileWatcher;
     private readonly IFileQueue _fileQueue;
     private readonly IFileTransferServiceFactory _transferFactory;
+    private readonly ITransferTracker _tracker;
     private Timer? _processTimer;
     private readonly SemaphoreSlim _processingSemaphore = new(1, 1);
     private CancellationToken _stoppingToken;
+
+    // maps file path → tracker record ID so we can update the same record on retry
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _fileToTrackerId = new();
 
     public TransferWorker(
         ILogger<TransferWorker> logger,
         IOptions<N24DataRelayConfiguration> options,
         IFileWatcher fileWatcher,
         IFileQueue fileQueue,
-        IFileTransferServiceFactory transferFactory)
+        IFileTransferServiceFactory transferFactory,
+        ITransferTracker tracker)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _config = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _fileWatcher = fileWatcher ?? throw new ArgumentNullException(nameof(fileWatcher));
         _fileQueue = fileQueue ?? throw new ArgumentNullException(nameof(fileQueue));
         _transferFactory = transferFactory ?? throw new ArgumentNullException(nameof(transferFactory));
+        _tracker = tracker ?? throw new ArgumentNullException(nameof(tracker));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -114,6 +120,17 @@ public sealed class TransferWorker : BackgroundService
             {
                 _logger.LogInformation("File detected: {Path}", fullPath);
                 _fileQueue.TryEnqueue(fullPath);
+
+                // Reuse the tracker record created by FileUploadService if it exists,
+                // otherwise create a new one (e.g. for files dropped directly into WatchDirectory)
+                var fileInfo = new FileInfo(fullPath);
+                var existing = _tracker.FindBySourcePath(fullPath);
+                var record = existing ?? _tracker.Enqueue(
+                    fileName: fileInfo.Name,
+                    sourcePath: fullPath,
+                    uploadedBy: DeriveUploadedBy(fullPath),
+                    fileSize: fileInfo.Exists ? fileInfo.Length : null);
+                _fileToTrackerId[fullPath] = record.Id;
             }
         }
         catch (Exception ex)
@@ -127,6 +144,14 @@ public sealed class TransferWorker : BackgroundService
         if (File.Exists(e.FullPath))
             _fileQueue.UpdateFileActivity(e.FullPath);
     }
+
+    private static string DeriveUploadedBy(string filePath)
+    {
+        // Files are saved as WatchDir/<username>/<file>; derive from parent folder name
+        var parent = Path.GetFileName(Path.GetDirectoryName(filePath));
+        return string.IsNullOrEmpty(parent) ? "unknown" : parent;
+    }
+
 
     private void ProcessPendingFiles(object? state)
     {
@@ -162,6 +187,12 @@ public sealed class TransferWorker : BackgroundService
                 if (!_fileQueue.IsFileStable(filePath, _config.Service.FileStabilitySeconds))
                     break;
 
+                _fileToTrackerId.TryGetValue(filePath, out var trackerId);
+
+                // Mark as Transferring (StatusChanged event will fire; WebApp listener pushes to SignalR)
+                if (trackerId != null)
+                    _tracker.UpdateStatus(trackerId, TransferStatus.Transferring);
+
                 var retries = _config.Service.RetryAttempts;
                 var delaySec = _config.Service.RetryDelaySeconds;
                 var backoff = _config.Service.RetryBackoffMultiplier;
@@ -189,6 +220,9 @@ public sealed class TransferWorker : BackgroundService
                 if (result != null && result.Success)
                 {
                     _logger.LogInformation("Transferred: {FileName}", result.FileName);
+                    if (trackerId != null)
+                        _tracker.UpdateStatus(trackerId, TransferStatus.Completed, destinationPath: result.DestinationPath);
+
                     if (_config.Service.ArchiveAfterTransfer && !string.IsNullOrEmpty(_config.Service.ArchiveDirectory))
                     {
                         try
@@ -196,6 +230,8 @@ public sealed class TransferWorker : BackgroundService
                             Directory.CreateDirectory(_config.Service.ArchiveDirectory);
                             var archivePath = Path.Combine(_config.Service.ArchiveDirectory, Path.GetFileName(filePath));
                             File.Move(filePath, archivePath, overwrite: true);
+                            if (trackerId != null)
+                                _tracker.UpdateStatus(trackerId, TransferStatus.Archived);
                         }
                         catch (Exception ex)
                         {
@@ -210,7 +246,11 @@ public sealed class TransferWorker : BackgroundService
                 else if (result != null)
                 {
                     _logger.LogError("Transfer failed: {FileName} - {Error}", result.FileName, result.ErrorMessage);
+                    if (trackerId != null)
+                        _tracker.UpdateStatus(trackerId, TransferStatus.Failed, errorMessage: result.ErrorMessage);
                 }
+
+                _fileToTrackerId.TryRemove(filePath, out _);
 
                 _fileQueue.Remove(filePath);
                 processed++;

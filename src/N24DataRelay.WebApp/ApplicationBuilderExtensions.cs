@@ -1,3 +1,5 @@
+using N24DataRelay.WebApp.Hubs;
+
 namespace N24DataRelay.WebApp;
 
 /// <summary>Configures the web pipeline (routes, middleware) for the host.</summary>
@@ -9,6 +11,7 @@ public static class ApplicationBuilderExtensions
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapRazorPages();
+        app.MapHub<TransferHub>("/hubs/transfer");
         app.MapGet("/", () => Results.Redirect("/Index"));
         return app;
     }

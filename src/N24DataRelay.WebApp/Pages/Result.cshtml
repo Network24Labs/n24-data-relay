@@ -4,25 +4,174 @@
     ViewData["Title"] = "Upload Result";
 }
 
-<div class="card">
-    <div class="card-header"><h4 class="mb-0">Upload Result</h4></div>
-    <div class="card-body">
-        @if (Model.Results.Count == 0)
+<h4 class="mb-3">Upload Result</h4>
+
+@if (Model.Results.Count == 0)
+{
+    <div class="alert alert-secondary">No upload results to display. <a asp-page="/Upload">Upload files</a>.</div>
+}
+else
+{
+    <div class="list-group mb-3" id="resultList">
+        @foreach (var r in Model.Results)
         {
-            <p>No upload results to display. <a asp-page="/Upload">Upload files</a>.</p>
-        }
-        else
-        {
-            <ul class="list-group">
-                @foreach (var r in Model.Results)
+            <div class="list-group-item @(r.Success ? "" : "list-group-item-danger")">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>@r.FileName</strong>
+                        <small class="text-muted ms-2">@ResultModel.FormatBytes(r.FileSize)</small>
+                    </div>
+                    @if (r.Success)
+                    {
+                        <span class="badge bg-success">Saved</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-danger">Failed</span>
+                    }
+                </div>
+
+                @if (!r.Success)
                 {
-                    <li class="list-group-item @(r.Success ? "list-group-item-success" : "list-group-item-danger")">
-                        @r.FileName: @(r.Success ? "Success" : r.ErrorMessage)
-                        @if (r.Success) { <small>(@(r.FileSize) bytes, @(r.RequiresTransfer ? "for transfer" : "DMZ"))</small> }
-                    </li>
+                    <p class="mb-0 mt-1 text-danger small">@r.ErrorMessage</p>
                 }
-            </ul>
-            <p class="mt-3"><a asp-page="/Upload" class="btn btn-primary">Upload more</a></p>
+                else if (r.RequiresTransfer && r.TrackerId != null)
+                {
+                    <p class="mb-0 mt-1 transfer-status" data-tracker-id="@r.TrackerId">
+                        <small class="text-info">
+                            <i class="fa-solid fa-clock"></i>
+                            <span class="status-text"> Queued for transfer…</span>
+                        </small>
+                    </p>
+                }
+                else if (r.RequiresTransfer)
+                {
+                    <p class="mb-0 mt-1"><small class="text-muted">Saved to transfer queue. Check <a asp-page="/Transfers">Transfer Status</a> for progress.</small></p>
+                }
+                else
+                {
+                    <p class="mb-0 mt-1"><small class="text-muted">Saved to DMZ upload folder.</small></p>
+                }
+            </div>
         }
     </div>
-</div>
+
+    @if (Model.HasTransferUploads)
+    {
+        <p class="text-muted small">Transfer to the remote server runs in the background.
+            <a asp-page="/Transfers">View full transfer history →</a>
+        </p>
+    }
+
+    <a asp-page="/Upload" class="btn btn-primary">Upload more</a>
+    @if (Model.HasTransferUploads)
+    {
+        <a asp-page="/Transfers" class="btn btn-outline-secondary ms-2">Transfer Status</a>
+    }
+}
+
+@section Scripts {
+@if (Model.HasTransferUploads)
+{
+<script>
+function updateTransferRow(record) {
+    const row = document.querySelector(`.transfer-status[data-tracker-id="${record.id}"]`);
+    if (!row) return;
+
+    const listItem = row.closest(".list-group-item");
+    const icon = row.querySelector("i");
+    const text = row.querySelector(".status-text");
+    const small = row.querySelector("small");
+
+    // Remove any previous error block
+    const prevError = row.querySelector(".error-block");
+    if (prevError) prevError.remove();
+
+    switch (record.status) {
+        case "Queued":
+            icon.className = "fa-solid fa-clock";
+            small.className = "text-info";
+            text.textContent = " Queued for transfer…";
+            break;
+
+        case "Transferring":
+            icon.className = "fa-solid fa-spinner fa-spin";
+            small.className = "text-primary";
+            text.textContent = " Transferring…";
+            break;
+
+        case "Completed":
+        case "Archived": {
+            icon.className = "fa-solid fa-circle-check";
+            small.className = "text-success";
+            const dest = record.destinationPath ? ` → ${record.destinationPath}` : "";
+            const ms = record.durationMs;
+            const duration = ms != null ? (ms < 1000 ? ms + "ms" : (ms/1000).toFixed(1) + "s") : "";
+            text.textContent = ` Transfer complete${dest}${duration ? " (" + duration + ")" : ""}`;
+            listItem?.classList.add("list-group-item-success");
+            listItem?.classList.remove("list-group-item-danger");
+            // pulse animation
+            row.style.transition = "all 0.3s ease";
+            break;
+        }
+
+        case "Failed": {
+            icon.className = "fa-solid fa-circle-xmark";
+            small.className = "text-danger";
+            const msg = record.errorMessage || "Transfer failed";
+            const short = msg.length > 120 ? msg.substring(0, 120) + "…" : msg;
+            text.textContent = ` ${short}`;
+            listItem?.classList.add("list-group-item-danger");
+            listItem?.classList.remove("list-group-item-success");
+
+            // expandable error block
+            const errId = "err-" + record.id;
+            const errHtml = `<div class="error-block mt-1">
+                <pre id="${errId}" class="d-none bg-light border rounded p-2 small text-danger">${escHtml(msg)}</pre>
+                <button class="btn btn-sm btn-outline-danger me-1" onclick="toggleErr('${errId}')">Show details</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="copyErr(this,'${escHtml(msg)}')">Copy error</button>
+            </div>`;
+            row.insertAdjacentHTML("beforeend", errHtml);
+            listItem?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            break;
+        }
+    }
+}
+
+function formatDuration(ms) {
+    if (ms == null) return "";
+    return ms < 1000 ? ms + "ms" : (ms / 1000).toFixed(1) + "s";
+}
+
+function escHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function toggleErr(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("d-none");
+}
+
+function copyErr(btn, msg) {
+    navigator.clipboard?.writeText(msg).then(() => {
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy error", 2000);
+    });
+}
+
+const conn = new signalR.HubConnectionBuilder()
+    .withUrl("/hubs/transfer")
+    .withAutomaticReconnect()
+    .build();
+
+conn.on("transferStatus", record => updateTransferRow(record));
+
+conn.start()
+    .then(() => conn.invoke("GetRecent").then(list => list.forEach(r => updateTransferRow(r))))
+    .catch(console.error);
+</script>
+<style>
+.transfer-status { transition: all 0.3s ease; }
+</style>
+}
+}

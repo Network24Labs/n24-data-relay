@@ -1,8 +1,10 @@
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using N24DataRelay.Core.Constants;
+using N24DataRelay.Core.Interfaces;
 using N24DataRelay.Core.Models;
 using N24DataRelay.WebApp.Data;
 using N24DataRelay.WebApp.Services;
@@ -45,6 +47,10 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddScoped<FileUploadService>();
+        services.AddSingleton<ITransferTracker, InMemoryTransferTracker>();
+        services.AddSignalR().AddJsonProtocol(options =>
+            options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+        services.AddHostedService<TransferStatusBroadcaster>();
 
         services.AddRazorPages()
             .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);

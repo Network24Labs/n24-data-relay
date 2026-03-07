@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using N24DataRelay.Core.Interfaces;
 using N24DataRelay.Core.Models;
 
 namespace N24DataRelay.WebApp.Services;
@@ -9,15 +10,18 @@ public class FileUploadService
 {
     private readonly IOptionsMonitor<N24DataRelay.Core.Models.N24DataRelayConfiguration> _configMonitor;
     private readonly ILogger<FileUploadService> _logger;
+    private readonly ITransferTracker _tracker;
 
     private N24DataRelay.Core.Models.N24DataRelayConfiguration Config => _configMonitor.CurrentValue;
 
     public FileUploadService(
         IOptionsMonitor<N24DataRelay.Core.Models.N24DataRelayConfiguration> configMonitor,
-        ILogger<FileUploadService> logger)
+        ILogger<FileUploadService> logger,
+        ITransferTracker tracker)
     {
         _configMonitor = configMonitor ?? throw new ArgumentNullException(nameof(configMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _tracker = tracker ?? throw new ArgumentNullException(nameof(tracker));
     }
 
     public async Task<UploadResult> UploadFileAsync(Stream fileStream, string fileName, string destination, string uploadedBy, bool requiresTransfer = false, string? notes = null, CancellationToken cancellationToken = default)
@@ -53,6 +57,21 @@ public class FileUploadService
 
             var safeFileName = Path.GetFileName(fileName);
             var filePath = Path.Combine(userUploadPath, safeFileName);
+
+            // Enqueue the tracker record BEFORE creating the file.
+            // FileSystemWatcher fires the Created event the moment the file handle opens,
+            // which can happen before we return from this method. Pre-registering the path
+            // lets TransferWorker.FindBySourcePath find the same record rather than creating
+            // a duplicate with a different ID that the client never knows about.
+            if (requiresTransfer)
+            {
+                var record = _tracker.Enqueue(
+                    fileName: safeFileName,
+                    sourcePath: filePath,
+                    uploadedBy: uploadedBy,
+                    fileSize: fileStream.Length);
+                result.TrackerId = record.Id;
+            }
 
             await using (var stream = new FileStream(filePath, FileMode.Create))
             {

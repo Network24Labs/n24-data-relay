@@ -4,31 +4,297 @@
     ViewData["Title"] = "Upload";
 }
 
-<div class="card">
-    <div class="card-header">
-        <h4 class="mb-0">File Upload</h4>
-        <small class="text-white-50">Signed in as @(User.Identity?.Name ?? "Unknown")</small>
+<div class="card mb-4" id="uploadCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0"><i class="fa-solid fa-upload me-2"></i>File Upload</h4>
+        <small class="text-white-50">@(User.Identity?.Name ?? "Unknown")</small>
     </div>
     <div class="card-body">
-        <form method="post" enctype="multipart/form-data">
-            <div asp-validation-summary="All" class="text-danger"></div>
+        <form id="uploadForm" enctype="multipart/form-data">
+            @Html.AntiForgeryToken()
+            <div id="formError" class="alert alert-danger d-none" role="alert"></div>
+
             <div class="mb-3">
                 <label class="form-label">Select files</label>
-                <input type="file" name="Files" class="form-control" multiple />
-                <div class="form-text">Max size per file: @Model.MaxFileSizeBytesDisplay. Blocked extensions: @Model.BlockedExtensionsDisplay</div>
+                <input type="file" name="Files" id="fileInput" class="form-control" multiple required />
+                <div class="form-text">
+                    Max size per file: @Model.MaxFileSizeBytesDisplay.
+                    Blocked extensions: @Model.BlockedExtensionsDisplay
+                </div>
             </div>
+
             @if (Model.ShowTransferOption)
             {
                 <div class="mb-3 form-check">
-                    <input asp-for="RequiresTransfer" class="form-check-input" />
-                    <label asp-for="RequiresTransfer" class="form-check-label">Send to transfer (SCADA)</label>
+                    <input type="checkbox" name="RequiresTransfer" id="RequiresTransfer" class="form-check-input" checked value="true" />
+                    <label for="RequiresTransfer" class="form-check-label">Send to transfer (SCADA / OT)</label>
                 </div>
             }
+
             <div class="mb-3">
-                <label asp-for="Notes" class="form-label">Notes (optional)</label>
-                <textarea asp-for="Notes" class="form-control" rows="2"></textarea>
+                <label for="Notes" class="form-label">Notes (optional)</label>
+                <textarea name="Notes" id="Notes" class="form-control" rows="2"></textarea>
             </div>
-            <button type="submit" class="btn btn-primary">Upload</button>
+
+            <button type="submit" class="btn btn-primary" id="uploadBtn">
+                <i class="fa-solid fa-upload me-1"></i>Upload
+            </button>
         </form>
+
+        <!-- Upload progress -->
+        <div id="uploadProgress" class="d-none mt-3">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                <span class="fw-semibold">Uploading…</span>
+            </div>
+            <div class="progress" style="height:6px;">
+                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
+            </div>
+        </div>
     </div>
 </div>
+
+<!-- Results appear here after upload, stay on same page -->
+<div id="resultsSection" class="d-none">
+    <h5 class="mb-3">
+        <i class="fa-solid fa-list-check me-2"></i>Upload Results
+        <a asp-page="/Transfers" class="btn btn-sm btn-outline-secondary ms-2 float-end">
+            <i class="fa-solid fa-clock-rotate-left me-1"></i>Transfer History
+        </a>
+    </h5>
+    <div class="list-group mb-3" id="resultList"></div>
+    <button class="btn btn-outline-primary" id="uploadAnotherBtn" onclick="resetForm()">
+        <i class="fa-solid fa-plus me-1"></i>Upload more files
+    </button>
+</div>
+
+@section Scripts {
+<script>
+let hubConn = null;
+
+// ── SignalR ──────────────────────────────────────────────────────────────────
+function refreshRecent() {
+    hubConn.invoke("GetRecent")
+        .then(list => list.forEach(r => updateTransferRow(r)))
+        .catch(err => console.error("GetRecent:", err));
+}
+
+function ensureHub() {
+    if (hubConn) {
+        refreshRecent();
+        return Promise.resolve();
+    }
+    hubConn = new signalR.HubConnectionBuilder()
+        .withUrl("/hubs/transfer")
+        .withAutomaticReconnect()
+        .build();
+    hubConn.on("transferStatus", record => updateTransferRow(record));
+    hubConn.onreconnected(() => refreshRecent());
+    return hubConn.start().then(() => refreshRecent());
+}
+
+// ── Transfer row update ──────────────────────────────────────────────────────
+function updateTransferRow(record) {
+    const row = document.querySelector(`.transfer-status[data-tracker-id="${record.id}"]`);
+    if (!row) return;
+
+    const listItem = row.closest(".list-group-item");
+    const icon = row.querySelector("i");
+    const text = row.querySelector(".status-text");
+    const small = row.querySelector("small");
+    row.querySelector(".error-block")?.remove();
+
+    switch (record.status) {
+        case "Queued":
+            icon.className = "fa-solid fa-clock";
+            small.className = "text-info";
+            text.textContent = " Queued for transfer…";
+            break;
+        case "Transferring":
+            icon.className = "fa-solid fa-spinner fa-spin";
+            small.className = "text-primary";
+            text.textContent = " Transferring…";
+            break;
+        case "Completed":
+        case "Archived": {
+            icon.className = "fa-solid fa-circle-check";
+            small.className = "text-success";
+            const dest = record.destinationPath ? ` → ${record.destinationPath}` : "";
+            const dur = fmtMs(record.durationMs);
+            text.textContent = ` Transfer complete${dest}${dur ? " (" + dur + ")" : ""}`;
+            listItem?.classList.add("list-group-item-success");
+            listItem?.classList.remove("list-group-item-danger");
+            break;
+        }
+        case "Failed": {
+            icon.className = "fa-solid fa-circle-xmark";
+            small.className = "text-danger";
+            const msg = record.errorMessage || "Transfer failed";
+            const short = msg.length > 120 ? msg.slice(0, 120) + "…" : msg;
+            text.textContent = ` ${short}`;
+            listItem?.classList.add("list-group-item-danger");
+            listItem?.classList.remove("list-group-item-success");
+            const errId = "err-" + record.id;
+            row.insertAdjacentHTML("beforeend", `
+                <div class="error-block mt-1">
+                    <pre id="${errId}" class="d-none bg-light border rounded p-2 small text-danger">${esc(msg)}</pre>
+                    <button class="btn btn-sm btn-outline-danger me-1" onclick="toggleEl('${errId}')">Show details</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="copyText(this,'${esc(msg)}')">Copy error</button>
+                </div>`);
+            listItem?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            break;
+        }
+    }
+}
+
+// ── Form submission ──────────────────────────────────────────────────────────
+document.getElementById("uploadForm").addEventListener("submit", async function (e) {
+    e.preventDefault();
+
+    const errEl = document.getElementById("formError");
+    errEl.classList.add("d-none");
+
+    const fileInput = document.getElementById("fileInput");
+    if (!fileInput.files.length) {
+        showError("Please select at least one file.");
+        return;
+    }
+
+    const btn = document.getElementById("uploadBtn");
+    const progress = document.getElementById("uploadProgress");
+    const bar = document.getElementById("progressBar");
+
+    btn.disabled = true;
+    progress.classList.remove("d-none");
+
+    // Animate progress bar while uploading (indeterminate style)
+    let pct = 0;
+    const ticker = setInterval(() => {
+        pct = Math.min(pct + 2, 90);
+        bar.style.width = pct + "%";
+    }, 100);
+
+    try {
+        const formData = new FormData(this);
+        const token = this.querySelector('[name="__RequestVerificationToken"]').value;
+
+        const resp = await fetch(window.location.pathname, {
+            method: "POST",
+            headers: { "RequestVerificationToken": token },
+            body: formData
+        });
+
+        clearInterval(ticker);
+        bar.style.width = "100%";
+        bar.classList.remove("progress-bar-animated");
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: "Upload failed." }));
+            showError(err.error || "Upload failed.");
+            return;
+        }
+
+        const results = await resp.json();
+        await renderResults(results);
+
+    } catch (err) {
+        clearInterval(ticker);
+        showError("Network error: " + err.message);
+    } finally {
+        btn.disabled = false;
+        progress.classList.add("d-none");
+        bar.style.width = "0%";
+        bar.classList.add("progress-bar-animated");
+    }
+});
+
+// ── Render results ───────────────────────────────────────────────────────────
+async function renderResults(results) {
+    const list = document.getElementById("resultList");
+    list.innerHTML = "";
+
+    const hasTransfer = results.some(r => r.success && r.requiresTransfer && r.trackerId);
+    if (hasTransfer) await ensureHub();
+
+    for (const r of results) {
+        const savedBadge = r.success
+            ? `<span class="badge bg-success">Saved</span>`
+            : `<span class="badge bg-danger">Failed</span>`;
+
+        let statusHtml = "";
+        if (!r.success) {
+            statusHtml = `<p class="mb-0 mt-1 text-danger small"><i class="fa-solid fa-circle-xmark me-1"></i>${esc(r.errorMessage || "Unknown error")}</p>`;
+        } else if (r.requiresTransfer && r.trackerId) {
+            statusHtml = `<p class="mb-0 mt-1 transfer-status" data-tracker-id="${r.trackerId}">
+                <small class="text-info"><i class="fa-solid fa-clock"></i><span class="status-text"> Queued for transfer…</span></small>
+            </p>`;
+        } else {
+            statusHtml = `<p class="mb-0 mt-1"><small class="text-muted"><i class="fa-solid fa-folder me-1"></i>Saved to DMZ upload folder.</small></p>`;
+        }
+
+        list.insertAdjacentHTML("beforeend", `
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${esc(r.fileName)}</strong>
+                        <small class="text-muted ms-2">${fmtBytes(r.fileSize)}</small>
+                    </div>
+                    ${savedBadge}
+                </div>
+                ${statusHtml}
+            </div>`);
+    }
+
+    // Scroll smoothly to results, hide form
+    document.getElementById("uploadCard").classList.add("d-none");
+    const sec = document.getElementById("resultsSection");
+    sec.classList.remove("d-none");
+    sec.scrollIntoView({ behavior: "smooth" });
+}
+
+function resetForm() {
+    document.getElementById("uploadForm").reset();
+    document.getElementById("resultList").innerHTML = "";
+    document.getElementById("resultsSection").classList.add("d-none");
+    document.getElementById("uploadCard").classList.remove("d-none");
+    document.getElementById("uploadCard").scrollIntoView({ behavior: "smooth" });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function showError(msg) {
+    const el = document.getElementById("formError");
+    el.textContent = msg;
+    el.classList.remove("d-none");
+}
+
+function fmtBytes(b) {
+    if (b >= 1 << 30) return (b / (1 << 30)).toFixed(1) + " GB";
+    if (b >= 1 << 20) return (b / (1 << 20)).toFixed(1) + " MB";
+    if (b >= 1 << 10) return (b / (1 << 10)).toFixed(1) + " KB";
+    return b + " B";
+}
+
+function fmtMs(ms) {
+    if (ms == null) return "";
+    return ms < 1000 ? ms + "ms" : (ms / 1000).toFixed(1) + "s";
+}
+
+function esc(s) {
+    return String(s)
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function toggleEl(id) { document.getElementById(id)?.classList.toggle("d-none"); }
+
+function copyText(btn, msg) {
+    navigator.clipboard?.writeText(msg).then(() => {
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy error", 2000);
+    });
+}
+</script>
+<style>
+.transfer-status { transition: all 0.3s ease; }
+</style>
+}

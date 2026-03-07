@@ -38,14 +38,11 @@ public class UploadModel : PageModel
     public async Task<IActionResult> OnPostAsync(IFormFileCollection? files)
     {
         if (files == null || files.Count == 0)
-        {
-            ModelState.AddModelError(string.Empty, "Please select at least one file.");
-            return Page();
-        }
+            return new JsonResult(new { error = "Please select at least one file." }) { StatusCode = 400 };
+
         var user = User.Identity?.Name ?? "unknown";
         var results = await _uploadService.UploadFormFilesAsync(files.ToList(), user, RequiresTransfer, Notes).ConfigureAwait(false);
-        TempData["UploadResults"] = System.Text.Json.JsonSerializer.Serialize(results);
-        return RedirectToPage("/Result");
+        return new JsonResult(results);
     }
 
     private static string FormatBytes(long bytes)
