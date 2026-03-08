@@ -13,28 +13,31 @@ namespace N24DataRelay.WebApp.Pages.Admin;
 [Authorize(Roles = "Admin")]
 public class SettingsModel : PageModel
 {
-    private readonly IOptionsMonitor<N24DataRelayConfiguration> _config;
+    private readonly IOptionsSnapshot<N24DataRelayConfiguration> _config;
     private readonly ConfigWriterService _writer;
     private readonly IConfiguration _rawConfig;
     private readonly IAuditLogger _audit;
     private readonly IFileTransferServiceFactory _transferFactory;
+    private readonly ILogger<SettingsModel> _logger;
 
     public SettingsModel(
-        IOptionsMonitor<N24DataRelayConfiguration> config,
+        IOptionsSnapshot<N24DataRelayConfiguration> config,
         ConfigWriterService writer,
         IConfiguration rawConfig,
         IAuditLogger audit,
-        IFileTransferServiceFactory transferFactory)
+        IFileTransferServiceFactory transferFactory,
+        ILogger<SettingsModel> logger)
     {
         _config = config;
         _writer = writer;
         _rawConfig = rawConfig;
         _audit = audit;
         _transferFactory = transferFactory;
+        _logger = logger;
     }
 
     public string WritePath => _writer.WritePath;
-    public N24DataRelayConfiguration Config => _config.CurrentValue;
+    public N24DataRelayConfiguration Config => _config.Value;
 
     /// <summary>
     /// Absolute path to the SQLite database file, parsed from the connection string.
@@ -129,14 +132,14 @@ public class SettingsModel : PageModel
 
         // ── Entra ID (Azure AD) ──────────────────────────────────────────────
         public bool EnableEntraId { get; set; }
-        public string EntraIdInstance { get; set; } = "https://login.microsoftonline.com/";
-        public string EntraIdTenantId { get; set; } = "";
-        public string EntraIdClientId { get; set; } = "";
+        public string? EntraIdInstance { get; set; } = "https://login.microsoftonline.com/";
+        public string? EntraIdTenantId { get; set; }
+        public string? EntraIdClientId { get; set; }
         /// <summary>Leave blank to keep the existing secret. Written to config file if provided.</summary>
         public string? EntraIdClientSecret { get; set; }
-        public string EntraIdCallbackPath { get; set; } = "/signin-oidc";
+        public string? EntraIdCallbackPath { get; set; } = "/signin-oidc";
         /// <summary>"Secret" (default) or "ManagedIdentity" (Azure Arc workload identity).</summary>
-        public string EntraIdCredentialMode { get; set; } = "Secret";
+        public string? EntraIdCredentialMode { get; set; } = "Secret";
         /// <summary>Optional user-assigned managed identity client ID. Leave blank for system-assigned.</summary>
         public string? ManagedIdentityClientId { get; set; }
 
@@ -161,7 +164,7 @@ public class SettingsModel : PageModel
     // ── GET: populate forms from current live config ─────────────────────────
     public void OnGet()
     {
-        PopulateFromConfig(_config.CurrentValue);
+        PopulateFromConfig(_config.Value);
         SetEntraIdSecretStatus();
         ApiBaseUrl = $"{Request.Scheme}://{Request.Host}/api/v1";
     }
@@ -276,7 +279,7 @@ public class SettingsModel : PageModel
             return Page();
         }
 
-        var cfg = ConfigWriterService.Clone(_config.CurrentValue);
+        var cfg = ConfigWriterService.Clone(_config.Value);
         cfg.Transfer.Ssh.Host = Ssh.Host.Trim();
         cfg.Transfer.Ssh.Port = Ssh.Port;
         cfg.Transfer.Ssh.Username = Ssh.Username.Trim();
@@ -290,6 +293,7 @@ public class SettingsModel : PageModel
         cfg.Transfer.Ssh.StrictHostKeyChecking = Ssh.StrictHostKeyChecking;
 
         await _writer.WriteAsync(cfg);
+        ForceConfigReload();
         _audit.Log(AuditEventTypes.ConfigSaved, User.Identity?.Name, subject: "SSH");
         StatusMessage = "SSH settings saved.";
         ActiveTab = "ssh";
@@ -306,7 +310,7 @@ public class SettingsModel : PageModel
             return Page();
         }
 
-        var cfg = ConfigWriterService.Clone(_config.CurrentValue);
+        var cfg = ConfigWriterService.Clone(_config.Value);
         cfg.Transfer.Smb.Server         = Smb.Server.Trim();
         cfg.Transfer.Smb.SharePath      = Smb.SharePath.Trim();
         cfg.Transfer.Smb.UseCredentials = Smb.UseCredentials;
@@ -315,6 +319,7 @@ public class SettingsModel : PageModel
         cfg.Transfer.Smb.Timeout        = Smb.Timeout;
 
         await _writer.WriteAsync(cfg);
+        ForceConfigReload();
         _audit.Log(AuditEventTypes.ConfigSaved, User.Identity?.Name, subject: "SMB");
         StatusMessage = "SMB settings saved.";
         ActiveTab = "smb";
@@ -331,7 +336,7 @@ public class SettingsModel : PageModel
             return Page();
         }
 
-        var cfg = ConfigWriterService.Clone(_config.CurrentValue);
+        var cfg = ConfigWriterService.Clone(_config.Value);
         cfg.Service.WatchDirectory         = Service.WatchDirectory.Trim();
         cfg.Service.TransferMethod         = Service.TransferMethod;
         cfg.Service.DeleteAfterTransfer    = Service.DeleteAfterTransfer;
@@ -348,6 +353,7 @@ public class SettingsModel : PageModel
         cfg.Service.FileFilter             = Service.FileFilter.Trim();
 
         await _writer.WriteAsync(cfg);
+        ForceConfigReload();
         _audit.Log(AuditEventTypes.ConfigSaved, User.Identity?.Name, subject: "Service");
         StatusMessage = "Transfer service settings saved.";
         ActiveTab = "service";
@@ -384,13 +390,17 @@ public class SettingsModel : PageModel
         KeepOnly("Portal");
         if (!ModelState.IsValid)
         {
+            var errors = ModelState
+                .Where(e => e.Value?.Errors.Count > 0)
+                .Select(e => $"{e.Key}: {string.Join("; ", e.Value!.Errors.Select(x => x.ErrorMessage))}");
+            _logger.LogWarning("SavePortal: ModelState invalid after KeepOnly. Errors: {Errors}", string.Join(" | ", errors));
             ActiveTab = "portal";
             PopulateOtherSections("portal");
             SetEntraIdSecretStatus();
             return Page();
         }
 
-        var cfg = ConfigWriterService.Clone(_config.CurrentValue);
+        var cfg = ConfigWriterService.Clone(_config.Value);
         cfg.WebPortal.Kestrel.HttpPort = Portal.HttpPort;
         cfg.WebPortal.Kestrel.HttpsPort = Portal.HttpsPort;
         cfg.WebPortal.Kestrel.EnableHttps = Portal.EnableHttps;
@@ -414,14 +424,15 @@ public class SettingsModel : PageModel
 
         // Save Entra ID credentials to the top-level AzureAd config section
         await _writer.WriteAzureAdAsync(
-            instance:                Portal.EntraIdInstance.Trim(),
-            tenantId:                Portal.EntraIdTenantId.Trim(),
-            clientId:                Portal.EntraIdClientId.Trim(),
-            callbackPath:            Portal.EntraIdCallbackPath.Trim(),
-            credentialMode:          Portal.EntraIdCredentialMode,
+            instance:                Portal.EntraIdInstance?.Trim() ?? "https://login.microsoftonline.com/",
+            tenantId:                Portal.EntraIdTenantId?.Trim() ?? "",
+            clientId:                Portal.EntraIdClientId?.Trim() ?? "",
+            callbackPath:            Portal.EntraIdCallbackPath?.Trim() ?? "/signin-oidc",
+            credentialMode:          Portal.EntraIdCredentialMode ?? "Secret",
             clientSecret:            Portal.EntraIdClientSecret,          // null/blank = keep existing
             managedIdentityClientId: Portal.ManagedIdentityClientId?.Trim());
 
+        ForceConfigReload();
         _audit.Log(AuditEventTypes.ConfigSaved, User.Identity?.Name, subject: "Portal");
         StatusMessage = "Web portal settings saved. Port changes require a restart.";
         ActiveTab = "portal";
@@ -438,13 +449,14 @@ public class SettingsModel : PageModel
             return Page();
         }
 
-        var cfg = ConfigWriterService.Clone(_config.CurrentValue);
+        var cfg = ConfigWriterService.Clone(_config.Value);
         cfg.Branding.CompanyName = Branding.CompanyName.Trim();
         cfg.Branding.SiteName = Branding.SiteName.Trim();
         cfg.Branding.SupportEmail = Branding.SupportEmail.Trim();
         cfg.Branding.Theme.PrimaryColor = Branding.PrimaryColor;
 
         await _writer.WriteAsync(cfg);
+        ForceConfigReload();
         _audit.Log(AuditEventTypes.ConfigSaved, User.Identity?.Name, subject: "Branding");
         StatusMessage = "Branding settings saved.";
         ActiveTab = "branding";
@@ -452,6 +464,18 @@ public class SettingsModel : PageModel
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Forces the ASP.NET Core config system to synchronously re-read all providers
+    /// (JSON files, env vars, etc.) so that IOptionsMonitor.CurrentValue is fresh
+    /// before the PRG redirect completes. Without this call there is a race between
+    /// the FileSystemWatcher firing and the next GET request arriving.
+    /// </summary>
+    private void ForceConfigReload()
+    {
+        if (_rawConfig is Microsoft.Extensions.Configuration.IConfigurationRoot root)
+            root.Reload();
+    }
 
     /// <summary>Remove model-state entries for all sections except the active one.</summary>
     private void KeepOnly(string section)
@@ -464,7 +488,7 @@ public class SettingsModel : PageModel
     /// <summary>Repopulate non-submitted sections from live config so the page renders correctly on validation failure.</summary>
     private void PopulateOtherSections(string active)
     {
-        var c = _config.CurrentValue;
+        var c = _config.Value;
         if (active != "ssh")
             Ssh = new SshInput { Host = c.Transfer.Ssh.Host, Port = c.Transfer.Ssh.Port, Username = c.Transfer.Ssh.Username, AuthMethod = c.Transfer.Ssh.AuthMethod, PrivateKeyPath = c.Transfer.Ssh.PrivateKeyPath, DestinationPath = c.Transfer.Ssh.DestinationPath, RemoteServerType = c.Transfer.Ssh.RemoteServerType, Compression = c.Transfer.Ssh.Compression, ConnectionTimeout = c.Transfer.Ssh.ConnectionTimeout, OperationTimeout = c.Transfer.Ssh.OperationTimeout, StrictHostKeyChecking = c.Transfer.Ssh.StrictHostKeyChecking };
         if (active != "smb")

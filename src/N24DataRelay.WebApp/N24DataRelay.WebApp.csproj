@@ -10,6 +10,10 @@
     <Version>0.1.0</Version>
     <PackageLicenseExpression>LGPL-3.0-or-later</PackageLicenseExpression>
     <OutputType>Library</OutputType>
+    <!-- XML doc comments fed into Swagger -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Suppress warnings for undocumented public members outside the API controller -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +26,8 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
     <PackageReference Include="Microsoft.Identity.Web" Version="4.5.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.4" />
+    <PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="10.1.4" />
     <ProjectReference Include="..\N24DataRelay.Core\N24DataRelay.Core.csproj" />
   </ItemGroup>
 

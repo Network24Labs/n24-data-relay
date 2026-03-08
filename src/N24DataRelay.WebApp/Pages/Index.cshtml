@@ -1,18 +1,144 @@
 @page
 @model IndexModel
 @{
-    ViewData["Title"] = "Home";
+    ViewData["Title"] = $"{Model.Config.Branding.SiteName} - Secure File Transfer";
 }
 
-<div class="text-center">
-    <h1 class="display-4">N24 Data Relay</h1>
-    <p class="lead">Secure file upload and transfer</p>
-    @if (User.Identity?.IsAuthenticated == true)
-    {
-        <p><a class="btn btn-primary" asp-page="/Upload">Upload files</a></p>
-    }
-    else
-    {
-        <p><a class="btn btn-primary" asp-page="/Login">Sign in</a> or <a asp-page="/Register">register</a> to upload files.</p>
-    }
+<div class="p-5 mb-4 bg-light rounded-3 border">
+    <h1 class="display-5 fw-bold">
+        <i class="fa-solid fa-network-wired me-3 text-primary"></i>@Model.Config.Branding.ProductName
+    </h1>
+    <p class="lead text-muted">Secure file transfer between DMZ and SCADA environments</p>
+    <hr class="my-4">
+
+    <div class="row g-4">
+
+        @* Left column: description + CTA *@
+        <div class="col-md-8">
+            <h5>What is this service?</h5>
+            <p class="text-muted">
+                This secure upload portal allows authorised personnel to transfer files between
+                network environments safely and with a full audit trail.
+            </p>
+
+            <ul class="list-unstyled mb-4">
+                <li class="mb-2">
+                    <i class="fa-solid fa-check-circle text-success me-2"></i>
+                    <strong>DMZ Environment:</strong> Files that remain within the DMZ network
+                </li>
+                <li class="mb-2">
+                    <i class="fa-solid fa-check-circle text-success me-2"></i>
+                    <strong>SCADA Environment:</strong> Files that need to be transferred to the SCADA network
+                </li>
+                <li class="mb-2">
+                    <i class="fa-solid fa-check-circle text-success me-2"></i>
+                    <strong>Automated Processing:</strong> Files are automatically queued and transferred
+                </li>
+                <li class="mb-2">
+                    <i class="fa-solid fa-check-circle text-success me-2"></i>
+                    <strong>Audit Trail:</strong> All transfers are logged for compliance
+                </li>
+            </ul>
+
+            <h6>Who can use this service?</h6>
+
+            @if (Model.ShowEntraId && Model.ShowLocalAccounts)
+            {
+                <div class="alert alert-info py-2">
+                    <i class="fa-solid fa-key me-2"></i>
+                    <strong>Authentication required:</strong> Sign in with your Microsoft account or
+                    a local account to access the upload service.
+                </div>
+            }
+            else if (Model.ShowEntraId)
+            {
+                <div class="alert alert-info py-2">
+                    <i class="fa-solid fa-key me-2"></i>
+                    <strong>Authentication required:</strong> Sign in with your Microsoft account
+                    to access the upload service.
+                </div>
+            }
+            else if (Model.ShowLocalAccounts)
+            {
+                <div class="alert alert-info py-2">
+                    <i class="fa-solid fa-key me-2"></i>
+                    <strong>Authentication required:</strong> Sign in or create an account to
+                    access the upload service.
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">
+                    Access is restricted to authorised users. Contact IT support if you need access.
+                </p>
+            }
+
+            <div class="mt-4">
+                @if (Model.IsAuthenticated)
+                {
+                    <a href="/Upload" class="btn btn-primary btn-lg">
+                        <i class="fa-solid fa-cloud-arrow-up me-2"></i>Start File Upload
+                    </a>
+                }
+                else
+                {
+                    <a href="/Login" class="btn btn-primary btn-lg me-2">
+                        <i class="fa-solid fa-right-to-bracket me-2"></i>Sign In to Upload
+                    </a>
+                    @if (Model.ShowLocalAccounts)
+                    {
+                        <a href="/Register" class="btn btn-outline-secondary btn-lg">
+                            <i class="fa-solid fa-user-plus me-2"></i>Register
+                        </a>
+                    }
+                }
+            </div>
+        </div>
+
+        @* Right column: help sidebar *@
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0"><i class="fa-solid fa-circle-question me-2"></i>Need Help?</h6>
+                </div>
+                <div class="card-body small">
+                    <p class="fw-semibold mb-1">IT Support</p>
+                    <p class="mb-3">
+                        <a href="mailto:@Model.Config.Branding.SupportEmail">
+                            <i class="fa-solid fa-envelope me-1"></i>@Model.Config.Branding.SupportEmail
+                        </a>
+                    </p>
+
+                    <hr>
+
+                    <p class="fw-semibold mb-1">File Requirements</p>
+                    <ul class="text-muted ps-3 mb-0">
+                        <li>Maximum file size: @Model.FormattedMaxFileSize</li>
+                        <li>Transfers may take several minutes</li>
+                        <li>All uploads are validated before processing</li>
+                        @if (Model.Config.WebPortal.BlockedFileExtensions.Count > 0)
+                        {
+                            <li>
+                                Blocked extensions:
+                                @string.Join(", ", Model.Config.WebPortal.BlockedFileExtensions.Take(5))
+                                @if (Model.Config.WebPortal.BlockedFileExtensions.Count > 5)
+                                {
+                                    <span>&hellip;</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+                @if (Model.IsAuthenticated)
+                {
+                    <div class="card-footer bg-transparent">
+                        <a asp-page="/Transfers" class="btn btn-sm btn-outline-primary w-100">
+                            <i class="fa-solid fa-clock-rotate-left me-1"></i>View Transfer History
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+
+    </div>
 </div>

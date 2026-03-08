@@ -393,6 +393,21 @@
     @* ══ Tab 4: Web Portal ═══════════════════════════════════════════════════ *@
     <div class="tab-pane fade @(activeTab == "portal" ? "show active" : "")" id="portal" role="tabpanel">
         <form method="post" asp-page-handler="SavePortal">
+            @if (!ViewData.ModelState.IsValid && ViewData.ModelState.Keys.Any(k => k.StartsWith("Portal.")))
+            {
+                <div class="alert alert-danger mb-3">
+                    <strong><i class="fa-solid fa-triangle-exclamation me-1"></i>Validation errors prevented saving:</strong>
+                    <ul class="mb-0 mt-1">
+                        @foreach (var entry in ViewData.ModelState.Where(e => e.Key.StartsWith("Portal.") && e.Value?.Errors.Count > 0))
+                        {
+                            foreach (var error in entry.Value!.Errors)
+                            {
+                                <li><code>@(entry.Key.Replace("Portal.", ""))</code>: @error.ErrorMessage</li>
+                            }
+                        }
+                    </ul>
+                </div>
+            }
             <div class="card mb-4">
                 <div class="card-header fw-semibold"><i class="fa-solid fa-network-wired me-2"></i>Network &amp; TLS</div>
                 <div class="card-body row g-3">
@@ -772,31 +787,76 @@ sources:
                         </div>
                     </div>
 
-                    @* LogScale / CrowdStrike Next-Gen SIEM YAML *@
+                    @* Swagger quick-start guide *@
                     <div class="col-12">
-                        <div class="d-flex align-items-center justify-content-between mb-1">
-                            <label class="form-label fw-semibold mb-0">
-                                <i class="fa-solid fa-crow me-1"></i>CrowdStrike Next-Gen SIEM / LogScale Collector Config
-                            </label>
-                            <button class="btn btn-sm btn-outline-secondary" type="button"
-                                    onclick="copyField('logscaleYaml', this)">
-                                <i class="fa-solid fa-copy me-1"></i>Copy YAML
-                            </button>
-                        </div>
-                        @if (!hasApiKey)
-                        {
-                            <div class="alert alert-warning py-2 mb-2 small">
-                                <i class="fa-solid fa-triangle-exclamation me-1"></i>
-                                Set an API key above and save before using this config — the key placeholder below will not work.
+                        <div class="card border-primary-subtle">
+                            <div class="card-header bg-primary-subtle fw-semibold small">
+                                <i class="fa-solid fa-book-open me-2"></i>How to use the API (Swagger UI)
                             </div>
-                        }
-                        <textarea id="logscaleYaml" class="form-control font-monospace small" rows="18" readonly
-                                  style="resize:vertical; background:#f8f9fa;">@logscaleYaml</textarea>
-                        <div class="form-text mt-1">
-                            Install the <a href="https://library.humio.com/falcon-logscale-collector/log-collector-getting-started.html"
-                                           target="_blank" rel="noopener">LogScale Collector</a> on this server, paste the config,
-                            then replace <code>YOUR_REPOSITORY</code> with your LogScale repository name.
-                            The collector will poll both endpoints every 60 seconds and forward structured JSON events.
+                            <div class="card-body small py-2">
+                                <ol class="mb-2 ps-3">
+                                    <li class="mb-1">
+                                        Set an <strong>API Key</strong> in the card above and click
+                                        <strong>Save Portal Settings</strong>.
+                                    </li>
+                                    <li class="mb-1">
+                                        Open the interactive API docs:
+                                        <a href="/swagger" target="_blank" class="fw-semibold">
+                                            /swagger <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i>
+                                        </a>
+                                    </li>
+                                    <li class="mb-1">
+                                        Click the <strong>Authorize 🔒</strong> button (top-right of the Swagger page).
+                                        Paste your API key in the <em>Value</em> field — <strong>no</strong>
+                                        <code>Bearer&nbsp;</code> prefix, Swagger adds it automatically.
+                                        Click <strong>Authorize</strong> then <strong>Close</strong>.
+                                    </li>
+                                    <li>
+                                        Expand any endpoint, click <strong>Try it out</strong>, then
+                                        <strong>Execute</strong> to test live responses.
+                                    </li>
+                                </ol>
+                                <div class="text-muted">
+                                    <i class="fa-solid fa-terminal fa-xs me-1"></i>
+                                    From a shell: <code>curl -H "Authorization: Bearer YOUR_KEY" @(apiBaseUrl)/transfers?limit=10</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* LogScale / CrowdStrike Next-Gen SIEM YAML — collapsed by default *@
+                    <div class="col-12">
+                        <button class="btn btn-sm btn-outline-secondary w-100 text-start d-flex align-items-center justify-content-between"
+                                type="button"
+                                data-bs-toggle="collapse" data-bs-target="#logscaleSection"
+                                aria-expanded="false" aria-controls="logscaleSection">
+                            <span>
+                                <i class="fa-solid fa-crow me-2"></i>CrowdStrike Next-Gen SIEM / LogScale Collector Config
+                            </span>
+                            <i class="fa-solid fa-chevron-down small"></i>
+                        </button>
+                        <div class="collapse mt-2" id="logscaleSection">
+                            <div class="d-flex align-items-center justify-content-end mb-1">
+                                <button class="btn btn-sm btn-outline-secondary" type="button"
+                                        onclick="copyField('logscaleYaml', this)">
+                                    <i class="fa-solid fa-copy me-1"></i>Copy YAML
+                                </button>
+                            </div>
+                            @if (!hasApiKey)
+                            {
+                                <div class="alert alert-warning py-2 mb-2 small">
+                                    <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                                    Set an API key above and save before using this config — the key placeholder below will not work.
+                                </div>
+                            }
+                            <textarea id="logscaleYaml" class="form-control font-monospace small" rows="18" readonly
+                                      style="resize:vertical; background:#f8f9fa;">@logscaleYaml</textarea>
+                            <div class="form-text mt-1">
+                                Install the <a href="https://library.humio.com/falcon-logscale-collector/log-collector-getting-started.html"
+                                               target="_blank" rel="noopener">LogScale Collector</a> on this server, paste the config,
+                                then replace <code>YOUR_REPOSITORY</code> with your LogScale repository name.
+                                The collector will poll both endpoints every 60 seconds and forward structured JSON events.
+                            </div>
                         </div>
                     </div>
                 </div>

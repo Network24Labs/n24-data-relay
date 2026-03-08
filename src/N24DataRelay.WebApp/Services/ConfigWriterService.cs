@@ -56,6 +56,10 @@ public class ConfigWriterService
     /// <summary>
     /// Replaces the <c>AzureAd</c> top-level key, preserving all other keys.
     /// </summary>
+    /// <param name="instance">Azure AD authority instance, e.g. <c>https://login.microsoftonline.com/</c>.</param>
+    /// <param name="tenantId">Azure AD tenant ID (GUID or domain).</param>
+    /// <param name="clientId">Application (client) ID of the registered app.</param>
+    /// <param name="callbackPath">OIDC redirect path, e.g. <c>/signin-oidc</c>.</param>
     /// <param name="credentialMode">
     ///   <c>"Secret"</c> — writes a <c>ClientSecret</c> field (blank = keep existing secret from file).<br/>
     ///   <c>"ManagedIdentity"</c> — writes a <c>ClientCredentials</c> array with
