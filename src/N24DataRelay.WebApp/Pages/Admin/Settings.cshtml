@@ -91,7 +91,7 @@
     <div class="tab-pane fade @(activeTab == "ssh" ? "show active" : "")" id="ssh" role="tabpanel">
         <form method="post" asp-page-handler="SaveSsh">
             <div class="card">
-                <div class="card-header fw-semibold"><i class="fa-solid fa-server me-2"></i>SCADA Transfer Target — SSH Connection</div>
+                <div class="card-header fw-semibold"><i class="fa-solid fa-server me-2"></i>@(Model.Config.Branding.ScadaSideName) Transfer Target — SSH Connection</div>
                 <div class="card-body row g-3">
 
                     <div class="col-md-8">
@@ -226,7 +226,7 @@
     <div class="tab-pane fade @(activeTab == "smb" ? "show active" : "")" id="smb" role="tabpanel">
         <form method="post" asp-page-handler="SaveSmb">
             <div class="card">
-                <div class="card-header fw-semibold"><i class="fa-solid fa-server me-2"></i>SCADA Transfer Target — SMB Share</div>
+                <div class="card-header fw-semibold"><i class="fa-solid fa-server me-2"></i>@(Model.Config.Branding.ScadaSideName) Transfer Target — SMB Share</div>
                 <div class="card-body row g-3">
 
                     <div class="col-12">
@@ -314,7 +314,7 @@
                     <div class="col-12">
                         <label asp-for="Service.WatchDirectory" class="form-label">Watch Directory <span class="text-danger">*</span></label>
                         <input asp-for="Service.WatchDirectory" class="form-control font-monospace" placeholder="/var/lib/n24-data-relay/uploads/transfer" />
-                        <div class="form-text">Files placed here are automatically queued for transfer to SCADA.</div>
+                        <div class="form-text">Files placed here are automatically queued for transfer to @(Model.Config.Branding.ScadaSideName).</div>
                         <span asp-validation-for="Service.WatchDirectory" class="text-danger small"></span>
                     </div>
                 </div>
@@ -921,6 +921,16 @@ sources:
                             <input asp-for="Branding.PrimaryColor" class="form-control font-monospace" placeholder="#0066CC" id="colorHex" />
                         </div>
                         <div class="form-text">Used for nav-bar and badges.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Branding.DmzSideName" class="form-label">Local / upload side name</label>
+                        <input asp-for="Branding.DmzSideName" class="form-control" placeholder="DMZ" />
+                        <div class="form-text">Label for the side where files are uploaded (e.g. DMZ, MPM DMZ).</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Branding.ScadaSideName" class="form-label">Transfer destination side name</label>
+                        <input asp-for="Branding.ScadaSideName" class="form-control" placeholder="SCADA" />
+                        <div class="form-text">Label for the side files are transferred to (e.g. SCADA, MPM SCADA).</div>
                     </div>
                 </div>
                 <div class="card-footer text-end">

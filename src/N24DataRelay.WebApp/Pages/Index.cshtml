@@ -8,7 +8,7 @@
     <h1 class="display-5 fw-bold">
         <i class="fa-solid fa-network-wired me-3 text-primary"></i>@Model.Config.Branding.ProductName
     </h1>
-    <p class="lead text-muted">Secure file transfer between DMZ and SCADA environments</p>
+    <p class="lead text-muted">Secure file transfer between @Model.Config.Branding.DmzSideName and @Model.Config.Branding.ScadaSideName environments</p>
     <hr class="my-4">
 
     <div class="row g-4">
@@ -24,11 +24,11 @@
             <ul class="list-unstyled mb-4">
                 <li class="mb-2">
                     <i class="fa-solid fa-check-circle text-success me-2"></i>
-                    <strong>DMZ Environment:</strong> Files that remain within the DMZ network
+                    <strong>@(Model.Config.Branding.DmzSideName) Environment:</strong> Files that remain within the @(Model.Config.Branding.DmzSideName) network
                 </li>
                 <li class="mb-2">
                     <i class="fa-solid fa-check-circle text-success me-2"></i>
-                    <strong>SCADA Environment:</strong> Files that need to be transferred to the SCADA network
+                    <strong>@(Model.Config.Branding.ScadaSideName) Environment:</strong> Files that need to be transferred to the @(Model.Config.Branding.ScadaSideName) network
                 </li>
                 <li class="mb-2">
                     <i class="fa-solid fa-check-circle text-success me-2"></i>

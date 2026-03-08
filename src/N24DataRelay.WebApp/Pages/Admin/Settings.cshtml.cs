@@ -163,6 +163,10 @@ public class SettingsModel : PageModel
         public string SiteName { get; set; } = "";
         [EmailAddress] public string SupportEmail { get; set; } = "";
         public string PrimaryColor { get; set; } = "#0066CC";
+        /// <summary>Display name for the local/upload side (e.g. DMZ, MPM DMZ).</summary>
+        public string DmzSideName { get; set; } = "DMZ";
+        /// <summary>Display name for the transfer destination side (e.g. SCADA, MPM SCADA).</summary>
+        public string ScadaSideName { get; set; } = "SCADA";
     }
 
     // ── GET: populate forms from current live config ─────────────────────────
@@ -269,7 +273,9 @@ public class SettingsModel : PageModel
             CompanyName = c.Branding.CompanyName,
             SiteName = c.Branding.SiteName,
             SupportEmail = c.Branding.SupportEmail,
-            PrimaryColor = c.Branding.Theme.PrimaryColor
+            PrimaryColor = c.Branding.Theme.PrimaryColor,
+            DmzSideName = c.Branding.DmzSideName,
+            ScadaSideName = c.Branding.ScadaSideName
         };
     }
 
@@ -464,6 +470,8 @@ public class SettingsModel : PageModel
         cfg.Branding.SiteName = Branding.SiteName.Trim();
         cfg.Branding.SupportEmail = Branding.SupportEmail.Trim();
         cfg.Branding.Theme.PrimaryColor = Branding.PrimaryColor;
+        cfg.Branding.DmzSideName = string.IsNullOrWhiteSpace(Branding.DmzSideName) ? "DMZ" : Branding.DmzSideName.Trim();
+        cfg.Branding.ScadaSideName = string.IsNullOrWhiteSpace(Branding.ScadaSideName) ? "SCADA" : Branding.ScadaSideName.Trim();
 
         await _writer.WriteAsync(cfg);
         ForceConfigReload();
@@ -508,6 +516,6 @@ public class SettingsModel : PageModel
         if (active != "portal")
             Portal = new PortalInput { HttpPort = c.WebPortal.Kestrel.HttpPort, HttpsPort = c.WebPortal.Kestrel.HttpsPort, EnableHttps = c.WebPortal.Kestrel.EnableHttps, CertificatePath = c.WebPortal.Kestrel.CertificatePath, MaxFileSizeGb = Math.Round(c.WebPortal.MaxFileSizeBytes / (1024.0 * 1024 * 1024), 2), BlockedExtensions = string.Join(", ", c.WebPortal.BlockedFileExtensions ?? new()), EnableUploadToTransfer = c.WebPortal.EnableUploadToTransfer, UploadDirectory = c.Paths.UploadDirectory, EnableLocalAccounts = c.WebPortal.Authentication.EnableLocalAccounts, RequireApproval = c.WebPortal.Authentication.RequireApproval, PasswordExpiryDays = c.WebPortal.Authentication.PasswordExpiryDays, PasswordExpiryWarningDays = c.WebPortal.Authentication.PasswordExpiryWarningDays, EnableEntraId = c.WebPortal.Authentication.EnableEntraId, EntraIdInstance = _rawConfig["AzureAd:Instance"] ?? "https://login.microsoftonline.com/", EntraIdTenantId = _rawConfig["AzureAd:TenantId"] ?? "", EntraIdClientId = _rawConfig["AzureAd:ClientId"] ?? "", EntraIdCallbackPath = _rawConfig["AzureAd:CallbackPath"] ?? "/signin-oidc", EntraIdCredentialMode = _rawConfig["AzureAd:ClientCredentials:0:SourceType"] == "SignedAssertionFromManagedIdentity" ? "ManagedIdentity" : "Secret", ManagedIdentityClientId = _rawConfig["AzureAd:ClientCredentials:0:ManagedIdentityClientId"] };
         if (active != "branding")
-            Branding = new BrandingInput { CompanyName = c.Branding.CompanyName, SiteName = c.Branding.SiteName, SupportEmail = c.Branding.SupportEmail, PrimaryColor = c.Branding.Theme.PrimaryColor };
+            Branding = new BrandingInput { CompanyName = c.Branding.CompanyName, SiteName = c.Branding.SiteName, SupportEmail = c.Branding.SupportEmail, PrimaryColor = c.Branding.Theme.PrimaryColor, DmzSideName = c.Branding.DmzSideName, ScadaSideName = c.Branding.ScadaSideName };
     }
 }

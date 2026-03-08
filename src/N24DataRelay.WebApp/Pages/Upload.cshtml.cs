@@ -30,6 +30,8 @@ public class UploadModel : PageModel
     public bool ShowTransferOption => _configMonitor.CurrentValue.WebPortal.EnableUploadToTransfer;
     public string MaxFileSizeBytesDisplay => FormatBytes(_configMonitor.CurrentValue.WebPortal.MaxFileSizeBytes);
     public string BlockedExtensionsDisplay => string.Join(", ", _configMonitor.CurrentValue.WebPortal.BlockedFileExtensions ?? new List<string>());
+    public string DmzSideName => _configMonitor.CurrentValue.Branding.DmzSideName;
+    public string ScadaSideName => _configMonitor.CurrentValue.Branding.ScadaSideName;
 
     public void OnGet()
     {

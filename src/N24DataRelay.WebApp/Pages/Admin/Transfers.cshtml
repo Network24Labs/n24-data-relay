@@ -9,7 +9,7 @@
     <span id="connectionBadge" class="badge bg-secondary">Connecting…</span>
 </div>
 
-<div class="card">
+<div class="card" data-scada-name="@Model.ScadaSideName">
     <div class="card-body p-0">
         <table class="table table-sm table-hover mb-0" id="transferTable">
             <thead class="table-dark">
@@ -32,7 +32,7 @@
                         <td><span class="badge @StatusBadgeClass(r.Status)">@r.Status</span></td>
                         <td><small>@r.QueuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</small></td>
                         <td><small>@FormatDuration(r.DurationMs)</small></td>
-                        <td>@if (r.DestinationPath != null) { <span class="badge bg-info text-dark">SCADA</span> }</td>
+                        <td>@if (r.DestinationPath != null) { <span class="badge bg-info text-dark">@Model.ScadaSideName</span> }</td>
                         <td><small class="text-danger">@r.ErrorMessage</small></td>
                     </tr>
                 }
@@ -75,7 +75,8 @@
 
         const badge    = `<span class="badge ${statusBadge[r.status] || 'bg-secondary'}">${r.status}</span>`;
         const duration = formatDuration(r.durationMs);
-        const dest     = r.destinationPath ? `<span class="badge bg-info text-dark">SCADA</span>` : "";
+        const scadaName = document.querySelector("[data-scada-name]")?.getAttribute("data-scada-name") || "SCADA";
+        const dest     = r.destinationPath ? `<span class="badge bg-info text-dark">${scadaName}</span>` : "";
         const err      = r.errorMessage ? `<small class="text-danger">${r.errorMessage}</small>` : "";
         const queued   = r.queuedAt ? new Date(r.queuedAt).toLocaleString(undefined, { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }) : "";
 

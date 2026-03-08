@@ -1,12 +1,21 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Models;
 
 namespace N24DataRelay.WebApp.Pages;
 
 public class ResultModel : PageModel
 {
+    private readonly IOptionsMonitor<N24DataRelayConfiguration> _config;
+
+    public ResultModel(IOptionsMonitor<N24DataRelayConfiguration> config)
+    {
+        _config = config;
+    }
+
     public List<UploadResult> Results { get; set; } = new();
     public bool HasTransferUploads => Results.Any(r => r.Success && r.RequiresTransfer);
+    public string DmzSideName => _config.CurrentValue.Branding.DmzSideName;
 
     public static string FormatBytes(long bytes)
     {

@@ -19,6 +19,10 @@ public class BrandingSettings
     public string SiteName { get; set; } = "Your Site Name";
     public string SupportEmail { get; set; } = "support@example.com";
     public string? LogoPath { get; set; }
+    /// <summary>Display name for the local/upload side (e.g. "DMZ", "MPM DMZ"). Shown in UI labels.</summary>
+    public string DmzSideName { get; set; } = "DMZ";
+    /// <summary>Display name for the transfer destination side (e.g. "SCADA", "MPM SCADA"). Shown in UI labels.</summary>
+    public string ScadaSideName { get; set; } = "SCADA";
     public ThemeSettings Theme { get; set; } = new();
 }
 
