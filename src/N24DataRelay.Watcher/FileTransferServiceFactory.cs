@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Interfaces;
@@ -10,15 +11,18 @@ public sealed class FileTransferServiceFactory : IFileTransferServiceFactory
     private readonly ILoggerFactory _loggerFactory;
     private readonly IOptionsMonitor<N24DataRelayConfiguration> _options;
     private readonly ICredentialProvider _credentialProvider;
+    private readonly IDataProtector _dataProtector;
 
     public FileTransferServiceFactory(
         ILoggerFactory loggerFactory,
         IOptionsMonitor<N24DataRelayConfiguration> options,
-        ICredentialProvider credentialProvider)
+        ICredentialProvider credentialProvider,
+        IDataProtectionProvider dataProtectionProvider)
     {
-        _loggerFactory       = loggerFactory;
-        _options             = options ?? throw new ArgumentNullException(nameof(options));
-        _credentialProvider  = credentialProvider;
+        _loggerFactory      = loggerFactory;
+        _options            = options ?? throw new ArgumentNullException(nameof(options));
+        _credentialProvider = credentialProvider;
+        _dataProtector      = dataProtectionProvider.CreateProtector("N24DataRelay.Credentials");
     }
 
     public IFileTransferService CreateTransferService()
@@ -28,7 +32,7 @@ public sealed class FileTransferServiceFactory : IFileTransferServiceFactory
 
         if (string.Equals(method, "ssh", StringComparison.OrdinalIgnoreCase))
             return new ScpFileTransferService(
-                _loggerFactory.CreateLogger<ScpFileTransferService>(), config, _credentialProvider);
+                _loggerFactory.CreateLogger<ScpFileTransferService>(), config, _credentialProvider, _dataProtector);
 
         if (string.Equals(method, "smb", StringComparison.OrdinalIgnoreCase))
             return new SmbFileTransferService(

@@ -152,6 +152,21 @@
                         </div>
                     </div>
 
+                    <div class="col-md-8" id="passwordRow">
+                        <label asp-for="Ssh.Password" class="form-label">Password</label>
+                        <div class="input-group">
+                            <input asp-for="Ssh.Password" type="password" class="form-control font-monospace"
+                                   placeholder="Leave blank to keep existing" autocomplete="new-password" id="sshPasswordInput" />
+                            <button class="btn btn-outline-secondary" type="button" id="toggleSshPassword" title="Show/hide">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            Stored encrypted using the application data-protection key.
+                            Prefer the <code>N24_SSH_KEY_PASSPHRASE</code> environment variable for public-key auth.
+                        </div>
+                    </div>
+
                     @* ── Advanced ─────────────────────────────────────── *@
                     <div class="col-12">
                         <a class="text-decoration-none small" data-bs-toggle="collapse" href="#sshAdvanced">
@@ -175,8 +190,17 @@
                                         <label class="form-check-label" asp-for="Ssh.Compression">Enable Compression</label>
                                     </div>
                                     <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" asp-for="Ssh.StrictHostKeyChecking" />
+                                        <input class="form-check-input" type="checkbox" asp-for="Ssh.StrictHostKeyChecking" id="strictHostChk" />
                                         <label class="form-check-label" asp-for="Ssh.StrictHostKeyChecking">Strict Host Key Checking</label>
+                                    </div>
+                                </div>
+                                <div class="col-12" id="fingerprintRow">
+                                    <label asp-for="Ssh.KnownHostFingerprint" class="form-label">Known Host Fingerprint (SHA-256)</label>
+                                    <input asp-for="Ssh.KnownHostFingerprint" class="form-control font-monospace"
+                                           placeholder="e.g. a1b2c3d4e5f6..." />
+                                    <div class="form-text">
+                                        Required when <strong>Strict Host Key Checking</strong> is enabled.
+                                        Obtain via: <code>ssh-keyscan -p @Model.Config.Transfer.Ssh.Port @(Model.Config.Transfer.Ssh.Host != "" ? Model.Config.Transfer.Ssh.Host : "&lt;host&gt;") | ssh-keygen -lf - -E sha256</code>
                                     </div>
                                 </div>
                             </div>
@@ -936,13 +960,36 @@ sources:
     function toggleArchive() { archRow.style.display = archChk.checked ? '' : 'none'; }
     if (archChk) { archChk.addEventListener('change', toggleArchive); toggleArchive(); }
 
-    // ── Show/hide key path based on auth method ──
-    const keyRow = document.getElementById('keyPathRow');
-    document.querySelectorAll('input[name="Ssh.AuthMethod"]').forEach(r => {
-        r.addEventListener('change', () => { keyRow.style.display = r.value === 'PublicKey' ? '' : 'none'; });
-    });
-    const currentMethod = document.querySelector('input[name="Ssh.AuthMethod"]:checked');
-    if (keyRow && currentMethod) keyRow.style.display = currentMethod.value === 'PublicKey' ? '' : 'none';
+    // ── Show/hide key path and password based on auth method ──
+    const keyRow      = document.getElementById('keyPathRow');
+    const passwordRow = document.getElementById('passwordRow');
+    function applyAuthMethod() {
+        const method = document.querySelector('input[name="Ssh.AuthMethod"]:checked')?.value;
+        if (keyRow)      keyRow.style.display      = method === 'PublicKey' ? '' : 'none';
+        if (passwordRow) passwordRow.style.display = method === 'Password'  ? '' : 'none';
+    }
+    document.querySelectorAll('input[name="Ssh.AuthMethod"]').forEach(r =>
+        r.addEventListener('change', applyAuthMethod));
+    applyAuthMethod();
+
+    // ── Show/hide fingerprint row based on strict host key checking ──
+    const strictHostChk    = document.getElementById('strictHostChk');
+    const fingerprintRow   = document.getElementById('fingerprintRow');
+    function applyStrictHostKey() {
+        if (fingerprintRow) fingerprintRow.style.display = strictHostChk?.checked ? '' : 'none';
+    }
+    if (strictHostChk) { strictHostChk.addEventListener('change', applyStrictHostKey); applyStrictHostKey(); }
+
+    // ── Show/hide SSH password ──
+    const sshPasswordInput  = document.getElementById('sshPasswordInput');
+    const toggleSshPassword = document.getElementById('toggleSshPassword');
+    if (toggleSshPassword && sshPasswordInput) {
+        toggleSshPassword.addEventListener('click', () => {
+            const isText = sshPasswordInput.type === 'text';
+            sshPasswordInput.type = isText ? 'password' : 'text';
+            toggleSshPassword.querySelector('i').className = isText ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+        });
+    }
 
     // ── Show/hide cert path based on HTTPS toggle ──
     const httpsChk = document.getElementById('enableHttps');

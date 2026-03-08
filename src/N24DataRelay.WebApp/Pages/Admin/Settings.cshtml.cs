@@ -77,12 +77,16 @@ public class SettingsModel : PageModel
         [Required] public string Username { get; set; } = "";
         public string AuthMethod { get; set; } = "PublicKey";
         public string? PrivateKeyPath { get; set; }
+        /// <summary>Leave blank to keep the existing password. Provided value will be encrypted.</summary>
+        public string? Password { get; set; }
         [Required] public string DestinationPath { get; set; } = "";
         public string RemoteServerType { get; set; } = "Linux";
         public bool Compression { get; set; } = true;
         [Range(10, 300)] public int ConnectionTimeout { get; set; } = 30;
         [Range(60, 3600)] public int OperationTimeout { get; set; } = 300;
         public bool StrictHostKeyChecking { get; set; } = true;
+        /// <summary>SHA-256 fingerprint of the remote host key (hex, with or without colons).</summary>
+        public string? KnownHostFingerprint { get; set; }
     }
 
     public class SmbInput
@@ -198,12 +202,14 @@ public class SettingsModel : PageModel
             Username = c.Transfer.Ssh.Username,
             AuthMethod = c.Transfer.Ssh.AuthMethod,
             PrivateKeyPath = c.Transfer.Ssh.PrivateKeyPath,
+            Password = null, // never pre-fill
             DestinationPath = c.Transfer.Ssh.DestinationPath,
             RemoteServerType = c.Transfer.Ssh.RemoteServerType,
             Compression = c.Transfer.Ssh.Compression,
             ConnectionTimeout = c.Transfer.Ssh.ConnectionTimeout,
             OperationTimeout = c.Transfer.Ssh.OperationTimeout,
-            StrictHostKeyChecking = c.Transfer.Ssh.StrictHostKeyChecking
+            StrictHostKeyChecking = c.Transfer.Ssh.StrictHostKeyChecking,
+            KnownHostFingerprint = c.Transfer.Ssh.KnownHostFingerprint
         };
         Smb = new SmbInput
         {
@@ -285,12 +291,16 @@ public class SettingsModel : PageModel
         cfg.Transfer.Ssh.Username = Ssh.Username.Trim();
         cfg.Transfer.Ssh.AuthMethod = Ssh.AuthMethod;
         cfg.Transfer.Ssh.PrivateKeyPath = Ssh.PrivateKeyPath?.Trim();
+        // Only update PasswordEncrypted if a new value was provided; blank = keep existing (writer encrypts it)
+        if (!string.IsNullOrEmpty(Ssh.Password))
+            cfg.Transfer.Ssh.PasswordEncrypted = Ssh.Password;
         cfg.Transfer.Ssh.DestinationPath = Ssh.DestinationPath.Trim();
         cfg.Transfer.Ssh.RemoteServerType = Ssh.RemoteServerType;
         cfg.Transfer.Ssh.Compression = Ssh.Compression;
         cfg.Transfer.Ssh.ConnectionTimeout = Ssh.ConnectionTimeout;
         cfg.Transfer.Ssh.OperationTimeout = Ssh.OperationTimeout;
         cfg.Transfer.Ssh.StrictHostKeyChecking = Ssh.StrictHostKeyChecking;
+        cfg.Transfer.Ssh.KnownHostFingerprint = Ssh.KnownHostFingerprint?.Trim();
 
         await _writer.WriteAsync(cfg);
         ForceConfigReload();
@@ -490,7 +500,7 @@ public class SettingsModel : PageModel
     {
         var c = _config.Value;
         if (active != "ssh")
-            Ssh = new SshInput { Host = c.Transfer.Ssh.Host, Port = c.Transfer.Ssh.Port, Username = c.Transfer.Ssh.Username, AuthMethod = c.Transfer.Ssh.AuthMethod, PrivateKeyPath = c.Transfer.Ssh.PrivateKeyPath, DestinationPath = c.Transfer.Ssh.DestinationPath, RemoteServerType = c.Transfer.Ssh.RemoteServerType, Compression = c.Transfer.Ssh.Compression, ConnectionTimeout = c.Transfer.Ssh.ConnectionTimeout, OperationTimeout = c.Transfer.Ssh.OperationTimeout, StrictHostKeyChecking = c.Transfer.Ssh.StrictHostKeyChecking };
+            Ssh = new SshInput { Host = c.Transfer.Ssh.Host, Port = c.Transfer.Ssh.Port, Username = c.Transfer.Ssh.Username, AuthMethod = c.Transfer.Ssh.AuthMethod, PrivateKeyPath = c.Transfer.Ssh.PrivateKeyPath, Password = null, DestinationPath = c.Transfer.Ssh.DestinationPath, RemoteServerType = c.Transfer.Ssh.RemoteServerType, Compression = c.Transfer.Ssh.Compression, ConnectionTimeout = c.Transfer.Ssh.ConnectionTimeout, OperationTimeout = c.Transfer.Ssh.OperationTimeout, StrictHostKeyChecking = c.Transfer.Ssh.StrictHostKeyChecking, KnownHostFingerprint = c.Transfer.Ssh.KnownHostFingerprint };
         if (active != "smb")
             Smb = new SmbInput { Server = c.Transfer.Smb.Server, SharePath = c.Transfer.Smb.SharePath, UseCredentials = c.Transfer.Smb.UseCredentials, Username = c.Transfer.Smb.Username, Domain = c.Transfer.Smb.Domain, Timeout = c.Transfer.Smb.Timeout };
         if (active != "service")

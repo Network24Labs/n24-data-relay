@@ -1,8 +1,12 @@
 using System.IO;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
+using N24DataRelay.Core.Constants;
 using N24DataRelay.Core.Interfaces;
 using N24DataRelay.Core.Models;
 using Renci.SshNet;
+using Renci.SshNet.Common;
 
 namespace N24DataRelay.Watcher;
 
@@ -12,15 +16,20 @@ public sealed class ScpFileTransferService : IFileTransferService
     private readonly ILogger<ScpFileTransferService> _logger;
     private readonly N24DataRelayConfiguration _config;
     private readonly ICredentialProvider _credentialProvider;
+    private readonly IDataProtector? _dataProtector;
+
+    private static readonly string EncPrefix = ApplicationConstants.Security.EncryptedValuePrefix;
 
     public ScpFileTransferService(
         ILogger<ScpFileTransferService> logger,
         N24DataRelayConfiguration config,
-        ICredentialProvider credentialProvider)
+        ICredentialProvider credentialProvider,
+        IDataProtector? dataProtector = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _credentialProvider = credentialProvider ?? throw new ArgumentNullException(nameof(credentialProvider));
+        _dataProtector = dataProtector;
     }
 
     public string GetTransferMethod() => "SSH/SCP";
@@ -79,6 +88,7 @@ public sealed class ScpFileTransferService : IFileTransferService
             throw new InvalidOperationException("Could not create SSH connection (check key or password).");
 
         using var client = new ScpClient(connectionInfo);
+        client.HostKeyReceived += (_, args) => HandleHostKey(args, ssh);
         client.Connect();
         try
         {
@@ -122,7 +132,8 @@ public sealed class ScpFileTransferService : IFileTransferService
         }
         else
         {
-            var password = _credentialProvider.GetCredential("SshPassword") ?? ssh.PasswordEncrypted;
+            var password = _credentialProvider.GetCredential("SshPassword")
+                        ?? DecryptIfProtected(ssh.PasswordEncrypted);
             if (!string.IsNullOrEmpty(password))
                 authMethods.Add(new PasswordAuthenticationMethod(ssh.Username, password));
         }
@@ -155,6 +166,7 @@ public sealed class ScpFileTransferService : IFileTransferService
             await Task.Run(() =>
             {
                 using var client = new SshClient(connectionInfo);
+                client.HostKeyReceived += (_, args) => HandleHostKey(args, ssh);
                 client.Connect();
                 client.Disconnect();
             }, cancellationToken).ConfigureAwait(false);
@@ -192,6 +204,7 @@ public sealed class ScpFileTransferService : IFileTransferService
             return await Task.Run(() =>
             {
                 using var client = new SftpClient(connectionInfo);
+                client.HostKeyReceived += (_, args) => HandleHostKey(args, ssh);
                 client.Connect();
                 try
                 {
@@ -208,5 +221,81 @@ public sealed class ScpFileTransferService : IFileTransferService
         {
             return -1;
         }
+    }
+
+    /// <summary>
+    /// Decrypts a value that was encrypted by <c>ConfigWriterService</c> (prefixed with <c>ENC:</c>).
+    /// Returns the raw value unchanged if it is not prefixed (plaintext / legacy config).
+    /// </summary>
+    private string? DecryptIfProtected(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        if (!value.StartsWith(EncPrefix, StringComparison.Ordinal)) return value;
+
+        if (_dataProtector is null)
+        {
+            _logger.LogWarning("SSH password value is encrypted (ENC: prefix) but no data protector is available. Cannot decrypt.");
+            return null;
+        }
+
+        try
+        {
+            return _dataProtector.Unprotect(value[EncPrefix.Length..]);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to decrypt SSH PasswordEncrypted value. The data-protection key may have changed.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Handles the SSH.NET HostKeyReceived event.
+    /// When <see cref="SshSettings.StrictHostKeyChecking"/> is true, the connection is only
+    /// trusted if the presented SHA-256 fingerprint matches <see cref="SshSettings.KnownHostFingerprint"/>.
+    /// When strict checking is disabled, the connection is allowed with a warning.
+    /// </summary>
+    private void HandleHostKey(HostKeyEventArgs args, SshSettings ssh)
+    {
+        var presented = Convert.ToHexString(SHA256.HashData(args.HostKey)).ToLowerInvariant();
+
+        if (!ssh.StrictHostKeyChecking)
+        {
+            _logger.LogWarning(
+                "SSH strict host key checking is disabled. Host: {Host}, Algorithm: {Algo}, SHA256: {Fp}. " +
+                "To enforce, set StrictHostKeyChecking=true and KnownHostFingerprint={Fp} in SSH settings.",
+                ssh.Host, args.HostKeyName, presented, presented);
+            args.CanTrust = true;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(ssh.KnownHostFingerprint))
+        {
+            _logger.LogError(
+                "SSH host key verification failed: StrictHostKeyChecking is enabled but KnownHostFingerprint " +
+                "is not configured. Rejecting connection to {Host}. " +
+                "Set KnownHostFingerprint to the following SHA-256 fingerprint to allow: {Fp}",
+                ssh.Host, presented);
+            args.CanTrust = false;
+            return;
+        }
+
+        // Normalise: strip colons/spaces, lowercase — accept both "ab:cd:ef" and "abcdef" formats
+        var stored = ssh.KnownHostFingerprint
+            .Replace(":", string.Empty, StringComparison.Ordinal)
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        if (!string.Equals(presented, stored, StringComparison.Ordinal))
+        {
+            _logger.LogError(
+                "SSH host key MISMATCH — possible man-in-the-middle attack. " +
+                "Host: {Host}, Expected: {Expected}, Received: {Presented}. Rejecting connection.",
+                ssh.Host, stored, presented);
+            args.CanTrust = false;
+            return;
+        }
+
+        args.CanTrust = true;
     }
 }

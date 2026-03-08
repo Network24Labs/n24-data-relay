@@ -21,9 +21,10 @@ public sealed partial class LoggingEmailSender : IEmailSender
 
     public Task SendAsync(string to, string subject, string htmlBody)
     {
-        // Extract any href links so they are plainly visible in the log
+        // Extract href links and redact any token query parameter before logging,
+        // so single-use reset tokens are never persisted in the log stream.
         var links = HrefPattern().Matches(htmlBody)
-            .Select(m => m.Groups[1].Value)
+            .Select(m => TokenPattern().Replace(m.Groups[1].Value, "token=[REDACTED]"))
             .Where(u => !string.IsNullOrEmpty(u))
             .ToList();
 
@@ -36,4 +37,7 @@ public sealed partial class LoggingEmailSender : IEmailSender
 
     [GeneratedRegex(@"href=""([^""]+)""", RegexOptions.IgnoreCase)]
     private static partial Regex HrefPattern();
+
+    [GeneratedRegex(@"token=[^&""]*", RegexOptions.IgnoreCase)]
+    private static partial Regex TokenPattern();
 }

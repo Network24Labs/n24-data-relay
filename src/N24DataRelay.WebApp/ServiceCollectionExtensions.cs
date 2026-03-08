@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -26,6 +27,11 @@ public static class ServiceCollectionExtensions
         var sectionName = ApplicationConstants.Configuration.SectionName;
         services.Configure<N24DataRelayConfiguration>(configuration.GetSection(sectionName));
 
+        // Data protection is configured in Program.cs (requires IWebHostEnvironment).
+        // AddWebAppServices only registers the base service so IDataProtectionProvider is
+        // resolvable; Program.cs adds the appropriate key storage for each environment.
+        services.AddDataProtection().SetApplicationName("N24DataRelay");
+
         var authConfig = configuration
             .GetSection(sectionName)
             .GetSection("WebPortal:Authentication");
@@ -46,7 +52,7 @@ public static class ServiceCollectionExtensions
                 options.Password.RequireLowercase = true;
                 options.Password.RequireUppercase = true;
                 options.Password.RequireNonAlphanumeric = false;
-                options.Password.RequiredLength = 6;
+                options.Password.RequiredLength = 8;
                 options.User.RequireUniqueEmail = true;
             })
             .AddEntityFrameworkStores<ApplicationDbContext>()

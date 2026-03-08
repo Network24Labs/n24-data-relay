@@ -2,6 +2,7 @@
   "profiles": {
     "N24DataRelay": {
       "commandName": "Project",
+      "applicationUrl": "http://localhost:5000",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -110,7 +112,6 @@ public class MonitoringApiController : ControllerBase
                 r.ThroughputBytesPerSec,
                 r.Verified,
                 r.ErrorMessage,
-                r.ErrorDetails,
                 r.TransferMethod,
                 r.RemoteHost))
             .ToListAsync(ct);
@@ -193,6 +194,10 @@ public class MonitoringApiController : ControllerBase
             return false;
 
         var provided = value["Bearer ".Length..].Trim();
-        return string.Equals(provided, configured, StringComparison.Ordinal);
+        // Hash both values before comparing so FixedTimeEquals always operates on equal-length inputs,
+        // avoiding a length-based timing side-channel.
+        var providedHash   = SHA256.HashData(Encoding.UTF8.GetBytes(provided));
+        var configuredHash = SHA256.HashData(Encoding.UTF8.GetBytes(configured));
+        return CryptographicOperations.FixedTimeEquals(providedHash, configuredHash);
     }
 }

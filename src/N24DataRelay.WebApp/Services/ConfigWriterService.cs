@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
+using N24DataRelay.Core.Constants;
 using N24DataRelay.Core.Models;
 
 namespace N24DataRelay.WebApp.Services;
@@ -11,17 +13,23 @@ namespace N24DataRelay.WebApp.Services;
 ///
 /// Both files are loaded with reloadOnChange:true, so most saved values take effect
 /// immediately via IOptionsMonitor without a restart (port/TLS changes need a restart).
+///
+/// Credentials stored in the <c>PasswordEncrypted</c> fields are encrypted using
+/// the ASP.NET Core Data Protection API before being written to disk.
 /// </summary>
 public class ConfigWriterService
 {
     public string WritePath { get; }
 
+    private readonly IDataProtector _dataProtector;
+
     private static readonly JsonSerializerOptions ReadOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly JsonSerializerOptions WriteOpts = new() { WriteIndented = true };
 
-    public ConfigWriterService(IWebHostEnvironment env)
+    public ConfigWriterService(IWebHostEnvironment env, IDataProtectionProvider dataProtectionProvider)
     {
-        WritePath = ResolveWritePath(env);
+        WritePath       = ResolveWritePath(env);
+        _dataProtector  = dataProtectionProvider.CreateProtector("N24DataRelay.Credentials");
     }
 
     private static string ResolveWritePath(IWebHostEnvironment env)
@@ -49,9 +57,29 @@ public class ConfigWriterService
 
     /// <summary>
     /// Replaces the <c>N24DataRelay</c> top-level key, preserving all other keys.
+    /// Plaintext values in <c>PasswordEncrypted</c> fields are encrypted before writing.
     /// </summary>
     public Task WriteAsync(N24DataRelayConfiguration config)
-        => MergeTopLevelAsync("N24DataRelay", config, keyToPreserve: null);
+    {
+        // Encrypt any plaintext PasswordEncrypted values before persisting.
+        // Values already carrying the "ENC:" prefix are left untouched.
+        config.Transfer.Ssh.PasswordEncrypted = EncryptIfPlaintext(config.Transfer.Ssh.PasswordEncrypted);
+        config.Transfer.Smb.PasswordEncrypted = EncryptIfPlaintext(config.Transfer.Smb.PasswordEncrypted);
+        return MergeTopLevelAsync("N24DataRelay", config, keyToPreserve: null);
+    }
+
+    /// <summary>
+    /// Encrypts a plaintext credential value using the application data-protection key,
+    /// storing the result with an <c>ENC:</c> prefix so readers can identify it.
+    /// Values that are null, empty, or already encrypted are returned unchanged.
+    /// </summary>
+    private string? EncryptIfPlaintext(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        var prefix = ApplicationConstants.Security.EncryptedValuePrefix;
+        if (value.StartsWith(prefix, StringComparison.Ordinal)) return value;
+        return prefix + _dataProtector.Protect(value);
+    }
 
     /// <summary>
     /// Replaces the <c>AzureAd</c> top-level key, preserving all other keys.

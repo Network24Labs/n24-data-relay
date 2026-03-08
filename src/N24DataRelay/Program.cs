@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using N24DataRelay.Core.Constants;
@@ -18,6 +19,50 @@ if (File.Exists(sharedConfigPath))
 
 builder.Services.AddWatcherServices(builder.Configuration);
 builder.Services.AddWebAppServices(builder.Configuration);
+
+// In Production, persist data-protection keys to a dedicated directory protected by
+// filesystem permissions (chmod 700, owned by the service user).
+// In Development, use ephemeral (in-memory) keys — no file persistence, no framework warning.
+if (!builder.Environment.IsDevelopment())
+{
+    var keysPath = builder.Configuration
+        .GetSection(ApplicationConstants.Configuration.SectionName)
+        .GetSection("Paths")["ConfigDirectory"]
+        ?? ApplicationConstants.Configuration.DefaultConfigDirectory;
+    builder.Services
+        .AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(keysPath, "keys")))
+        .SetApplicationName("N24DataRelay");
+}
+
+// Apply Kestrel HTTPS/HTTP port settings from N24DataRelay:WebPortal:Kestrel config.
+// In Development, leave Kestrel alone — launchSettings.json / ASPNETCORE_URLS controls the port.
+if (!builder.Environment.IsDevelopment())
+{
+    var kestrelSection = builder.Configuration
+        .GetSection(ApplicationConstants.Configuration.SectionName)
+        .GetSection("WebPortal:Kestrel");
+    var httpPort     = kestrelSection.GetValue<int>("HttpPort",     8080);
+    var httpsPort    = kestrelSection.GetValue<int>("HttpsPort",    8443);
+    var enableHttps  = kestrelSection.GetValue<bool>("EnableHttps", false);
+    var certPath     = kestrelSection["CertificatePath"];
+    var certPassword = Environment.GetEnvironmentVariable("N24_CERT_PASSWORD");
+
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ListenAnyIP(httpPort);
+        if (enableHttps && !string.IsNullOrEmpty(certPath) && File.Exists(certPath))
+        {
+            options.ListenAnyIP(httpsPort, listenOptions =>
+            {
+                if (!string.IsNullOrEmpty(certPassword))
+                    listenOptions.UseHttps(certPath, certPassword);
+                else
+                    listenOptions.UseHttps(certPath);
+            });
+        }
+    });
+}
 
 var app = builder.Build();
 
@@ -129,4 +174,37 @@ using (var scope = app.Services.CreateScope())
 
 app.UseWebApp();
 
+// Warn if the production config file is world-readable (credentials at rest would be exposed).
+CheckConfigFilePermissions(app.Logger, app.Environment);
+
 await app.RunAsync();
+
+static void CheckConfigFilePermissions(ILogger logger, IWebHostEnvironment env)
+{
+    if (env.IsDevelopment()) return;
+
+    try
+    {
+        var configPath = ApplicationConstants.Configuration.SharedConfigPath;
+        if (!File.Exists(configPath)) return;
+
+        var info = new FileInfo(configPath);
+        // UnixFileMode is available on .NET 7+; permissions are only meaningful on non-Windows.
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            var mode = (int)info.UnixFileMode;
+            // World-readable: mode & 0o004 != 0
+            if ((mode & 0b000_000_100) != 0)
+            {
+                logger.LogWarning(
+                    "CONFIG SECURITY WARNING: {Path} is world-readable (octal mode {Mode}). " +
+                    "Restrict with: chmod 640 <path> && chown root:n24-data-relay <path> (see path above)",
+                    configPath, Convert.ToString(mode, 8));
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogDebug(ex, "Could not check config file permissions.");
+    }
+}

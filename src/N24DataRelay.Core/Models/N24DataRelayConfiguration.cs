@@ -132,6 +132,13 @@ public class SshSettings
     public int KeepAliveInterval { get; set; } = 30;
     public bool Compression { get; set; } = true;
     public bool StrictHostKeyChecking { get; set; } = true;
+    /// <summary>
+    /// Expected SHA-256 fingerprint of the remote server's host key (hex, with or without colons).
+    /// Required when <see cref="StrictHostKeyChecking"/> is true. Leave empty to disable verification
+    /// (connection is rejected when strict checking is on and this is unset).
+    /// Obtain via: <c>ssh-keyscan -p PORT HOST | ssh-keygen -lf - -E sha256</c>
+    /// </summary>
+    public string? KnownHostFingerprint { get; set; }
 }
 
 public class SmtpSettings

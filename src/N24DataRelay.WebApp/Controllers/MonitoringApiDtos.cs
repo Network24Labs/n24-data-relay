@@ -31,7 +31,6 @@ public record HealthResponse(
 /// <param name="ThroughputBytesPerSec">Measured transfer throughput in bytes/second, or null if unavailable.</param>
 /// <param name="Verified">Whether file integrity was verified after transfer.</param>
 /// <param name="ErrorMessage">Short error message on failure, or null on success.</param>
-/// <param name="ErrorDetails">Full exception detail on failure, or null on success.</param>
 /// <param name="TransferMethod">Transfer method used: SSH/SCP or SMB.</param>
 /// <param name="RemoteHost">Remote host or share the file was sent to.</param>
 public record TransferRecordDto(
@@ -48,7 +47,6 @@ public record TransferRecordDto(
     double? ThroughputBytesPerSec,
     bool Verified,
     string? ErrorMessage,
-    string? ErrorDetails,
     string? TransferMethod,
     string? RemoteHost);
 
