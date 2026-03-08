@@ -45,6 +45,15 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# ---> Packaging / release (build-deb.sh, sign-release.sh)
+dist/
+
+# ---> .NET test outputs
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
 # ---> User secrets / local dev config
 secrets.json
 *.pfx
