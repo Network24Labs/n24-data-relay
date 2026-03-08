@@ -35,6 +35,7 @@ public static class ApplicationBuilderExtensions
             app.UseHttpsRedirection();
         }
 
+        app.UseStaticFiles();
         app.UseAuthentication();
         app.UseAuthorization();
 

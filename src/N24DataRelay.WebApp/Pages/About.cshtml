@@ -1,0 +1,108 @@
+@page
+@model AboutModel
+@{
+    ViewData["Title"] = "About";
+}
+
+<div class="about-page mx-auto" style="max-width: 700px;">
+    @* Branding block — light background to match app *@
+    <div class="rounded-3 border border-secondary p-4 p-md-5 mb-4 text-center bg-light">
+        <div class="brand-orbitron text-dark mb-2" style="font-size: 2rem; letter-spacing: 0.2em;">N E T W O R K 2 4</div>
+        <p class="text-muted small mb-0 fst-italic">Secure file transfer between DMZ and OT/SCADA</p>
+    </div>
+
+    @* Product title *@
+    <h2 class="text-center fw-bold mb-1" style="font-size: 1.75rem;">@Model.AppName</h2>
+    <p class="text-center text-muted mb-4">Web portal and transfer service</p>
+
+    @* Version information card *@
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title fw-semibold mb-3">Version Information</h5>
+            <div class="row g-2 small">
+                <div class="col-4 col-md-3 fw-semibold">Version:</div>
+                <div class="col-8 col-md-9">@Model.Version</div>
+                @if (!string.IsNullOrEmpty(Model.BuildDate))
+                {
+                    <div class="col-4 col-md-3 fw-semibold">Build Date:</div>
+                    <div class="col-8 col-md-9">@Model.BuildDate</div>
+                }
+                <div class="col-4 col-md-3 fw-semibold">Framework:</div>
+                <div class="col-8 col-md-9">.NET 8.0</div>
+                <div class="col-4 col-md-3 fw-semibold">License:</div>
+                <div class="col-8 col-md-9">LGPL-3.0</div>
+            </div>
+        </div>
+    </div>
+
+    @* About description card *@
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title fw-semibold mb-3">About</h5>
+            <p class="card-text text-muted mb-0 lh-lg">
+                N24 Data Relay is a secure file transfer solution that combines automated file watching,
+                transfer over SSH/SCP or SMB, and a web portal with local and Entra ID authentication.
+                It runs as a single service on Linux and is managed via the web admin UI.
+            </p>
+        </div>
+    </div>
+
+    @* Key features card *@
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title fw-semibold mb-3">Key Features</h5>
+            <ul class="list-unstyled mb-0">
+                <li class="d-flex align-items-center gap-2 mb-2">
+                    <i class="fa-solid fa-check text-success" style="width: 1rem;"></i>
+                    <span>Automated file transfer with SSH/SCP (and planned SMB support)</span>
+                </li>
+                <li class="d-flex align-items-center gap-2 mb-2">
+                    <i class="fa-solid fa-check text-success" style="width: 1rem;"></i>
+                    <span>Web portal with local accounts and Entra ID</span>
+                </li>
+                <li class="d-flex align-items-center gap-2 mb-2">
+                    <i class="fa-solid fa-check text-success" style="width: 1rem;"></i>
+                    <span>Real-time transfer status and admin dashboard</span>
+                </li>
+                <li class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-check text-success" style="width: 1rem;"></i>
+                    <span>Single systemd service on Linux; no Windows dependency</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    @* Resources / links card *@
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title fw-semibold mb-3">Resources</h5>
+            <div class="d-flex flex-column gap-3">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-brands fa-github fa-lg text-muted" style="width: 1.5rem;"></i>
+                    <span>
+                        <a href="https://github.com/Network24Labs/n24-data-relay" target="_blank" rel="noopener noreferrer">This project (n24-data-relay)</a>
+                        <span class="text-muted small">— Source code and documentation</span>
+                    </span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-brands fa-github fa-lg text-muted" style="width: 1.5rem;"></i>
+                    <span>
+                        <a href="https://github.com/Network24Labs" target="_blank" rel="noopener noreferrer">Network24 on GitHub</a>
+                        <span class="text-muted small">— Organization and other repos</span>
+                    </span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-globe text-muted" style="width: 1.5rem;"></i>
+                    <span>
+                        <a href="https://network24.tv" target="_blank" rel="noopener noreferrer">Network24</a>
+                        <span class="text-muted small">— Website</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Copyright footer *@
+    <p class="text-center text-muted small mb-1">© 2026 Network24 Labs</p>
+    <p class="text-center text-muted small mb-0">@Model.LicenseNotice</p>
+</div>
