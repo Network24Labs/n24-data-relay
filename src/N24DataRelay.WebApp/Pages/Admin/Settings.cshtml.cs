@@ -422,10 +422,17 @@ public class SettingsModel : PageModel
         cfg.WebPortal.Kestrel.EnableHttps = Portal.EnableHttps;
         cfg.WebPortal.Kestrel.CertificatePath = Portal.CertificatePath?.Trim();
         cfg.WebPortal.MaxFileSizeBytes = (long)(Portal.MaxFileSizeGb * 1024 * 1024 * 1024);
-        cfg.WebPortal.BlockedFileExtensions = Portal.BlockedExtensions
+        var newBlocked = Portal.BlockedExtensions
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(e => e.StartsWith('.'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(e => e, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var currentBlocked = _config.Value.WebPortal.BlockedFileExtensions ?? new List<string>();
+        var currentSet = currentBlocked.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var newSet = newBlocked.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!currentSet.SetEquals(newSet))
+            cfg.WebPortal.BlockedFileExtensions = newBlocked;
         cfg.WebPortal.EnableUploadToTransfer = Portal.EnableUploadToTransfer;
         cfg.Paths.UploadDirectory = Portal.UploadDirectory.Trim();
         cfg.WebPortal.Authentication.EnableLocalAccounts = Portal.EnableLocalAccounts;

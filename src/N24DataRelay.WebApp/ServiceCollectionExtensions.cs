@@ -26,6 +26,14 @@ public static class ServiceCollectionExtensions
     {
         var sectionName = ApplicationConstants.Configuration.SectionName;
         services.Configure<N24DataRelayConfiguration>(configuration.GetSection(sectionName));
+        services.PostConfigure<N24DataRelayConfiguration>(options =>
+        {
+            if (options.WebPortal.BlockedFileExtensions is null || options.WebPortal.BlockedFileExtensions.Count == 0)
+            {
+                options.WebPortal.BlockedFileExtensions = new List<string>
+                    { ".exe", ".dll", ".bat", ".cmd", ".ps1", ".vbs", ".js" };
+            }
+        });
 
         // Data protection is configured in Program.cs (requires IWebHostEnvironment).
         // AddWebAppServices only registers the base service so IDataProtectionProvider is

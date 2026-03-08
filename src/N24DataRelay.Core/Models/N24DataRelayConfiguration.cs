@@ -79,7 +79,7 @@ public class WebPortalSettings
     public AuthenticationSettings Authentication { get; set; } = new();
     public long MaxFileSizeBytes { get; set; } = 4294967295;
     public int MaxConcurrentUploads { get; set; } = 10;
-    public List<string> BlockedFileExtensions { get; set; } = new() { ".exe", ".dll", ".bat", ".cmd", ".ps1", ".vbs", ".js" };
+    public List<string> BlockedFileExtensions { get; set; } = new();
     public bool EnableUploadToTransfer { get; set; } = true;
     public KestrelSettings Kestrel { get; set; } = new();
 }
