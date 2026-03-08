@@ -1,0 +1,31 @@
+[Unit]
+Description=N24 Data Relay
+Documentation=https://github.com/zentrixlabs/n24-data-relay
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+User=n24-data-relay
+Group=n24-data-relay
+WorkingDirectory=/opt/n24-data-relay
+ExecStart=/opt/n24-data-relay/N24DataRelay
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=n24-data-relay
+
+# Paths
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+Environment=N24_DATA_RELAY_CONFIG_DIR=/etc/n24-data-relay
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/n24-data-relay /var/log/n24-data-relay /etc/n24-data-relay
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
