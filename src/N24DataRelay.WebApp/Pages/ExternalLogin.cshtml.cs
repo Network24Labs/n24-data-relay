@@ -60,13 +60,14 @@ public class ExternalLoginModel : PageModel
 
         if (result.Succeeded)
         {
-            // Check approval before allowing access.
+            // Directory-backed users are auto-approved; upgrade any legacy unapproved records.
             var existingUser = await _userManager.FindByLoginAsync(info.LoginProvider, info.ProviderKey);
             if (existingUser != null && !existingUser.IsApproved)
             {
-                await _signInManager.SignOutAsync();
-                TempData["InfoMessage"] = "Your account is pending approval by an administrator.";
-                return RedirectToPage("/Login");
+                existingUser.IsApproved = true;
+                existingUser.ApprovedDate = DateTime.UtcNow;
+                existingUser.ApprovedBy = "Entra ID (auto)";
+                await _userManager.UpdateAsync(existingUser);
             }
             return LocalRedirect(returnUrl);
         }
@@ -100,7 +101,7 @@ public class ExternalLoginModel : PageModel
                 Email = email,
                 EmailConfirmed = true,
                 RegistrationDate = DateTime.UtcNow,
-                IsApproved = isFirstUser
+                IsApproved = true
             };
 
             var createResult = await _userManager.CreateAsync(user);
@@ -118,10 +119,13 @@ public class ExternalLoginModel : PageModel
 
         await _userManager.AddLoginAsync(user, info);
 
+        // Directory-backed users are auto-approved; upgrade any legacy unapproved records.
         if (!user.IsApproved)
         {
-            TempData["InfoMessage"] = "Your account has been created and is awaiting approval by an administrator.";
-            return RedirectToPage("/Login");
+            user.IsApproved = true;
+            user.ApprovedDate = DateTime.UtcNow;
+            user.ApprovedBy = "Entra ID (auto)";
+            await _userManager.UpdateAsync(user);
         }
 
         await _signInManager.SignInAsync(user, isPersistent: false, info.LoginProvider);

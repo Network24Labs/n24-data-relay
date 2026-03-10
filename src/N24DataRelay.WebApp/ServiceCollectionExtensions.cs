@@ -90,6 +90,7 @@ public static class ServiceCollectionExtensions
                 opts.SignInScheme = IdentityConstants.ExternalScheme);
         }
 
+        services.AddScoped<LdapAuthenticationService>();
         services.AddScoped<FileUploadService>();
         services.AddSingleton<ConfigWriterService>();
         // Email sender: uses SMTP when enabled+configured, falls back to log-only stub.

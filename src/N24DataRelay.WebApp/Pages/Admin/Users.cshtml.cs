@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Models;
 using N24DataRelay.WebApp.Data;
@@ -17,17 +18,20 @@ public class UsersModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<IdentityRole> _roleManager;
+    private readonly ApplicationDbContext _db;
     private readonly IOptionsMonitor<N24DataRelayConfiguration> _config;
     private readonly IAuditLogger _audit;
 
     public UsersModel(
         UserManager<ApplicationUser> userManager,
         RoleManager<IdentityRole> roleManager,
+        ApplicationDbContext db,
         IOptionsMonitor<N24DataRelayConfiguration> config,
         IAuditLogger audit)
     {
         _userManager = userManager;
         _roleManager = roleManager;
+        _db = db;
         _config = config;
         _audit = audit;
     }
@@ -57,6 +61,10 @@ public class UsersModel : PageModel
         /// <summary>"ok" | "warning" | "expired" | "never"</summary>
         public string PasswordStatus { get; set; } = "never";
         public int? DaysUntilExpiry { get; set; }
+        /// <summary>Display label: "Local", "Entra ID", "AD/LDAP", or combined like "Local + Entra ID".</summary>
+        public string AccountType { get; set; } = "Local";
+        /// <summary>True if the user has a local password hash (as opposed to directory-only).</summary>
+        public bool HasLocalPassword { get; set; }
     }
 
     public async Task OnGetAsync()
@@ -64,6 +72,11 @@ public class UsersModel : PageModel
         var currentUserId = _userManager.GetUserId(User);
         var expiryDays = _config.CurrentValue.WebPortal.Authentication.PasswordExpiryDays;
         var warningDays = _config.CurrentValue.WebPortal.Authentication.PasswordExpiryWarningDays;
+
+        // Bulk-load external login providers per user
+        var loginsByUser = await _db.UserLogins
+            .GroupBy(l => l.UserId)
+            .ToDictionaryAsync(g => g.Key, g => g.Select(l => l.LoginProvider).Distinct().ToList());
 
         var users = _userManager.Users
             .OrderByDescending(u => u.RegistrationDate)
@@ -75,6 +88,8 @@ public class UsersModel : PageModel
         foreach (var user in users)
         {
             var isAdmin = await _userManager.IsInRoleAsync(user, "Admin");
+            var hasPassword = !string.IsNullOrEmpty(user.PasswordHash);
+            loginsByUser.TryGetValue(user.Id, out var providers);
 
             string pwStatus = "never";
             int? daysUntil = null;
@@ -95,7 +110,7 @@ public class UsersModel : PageModel
             }
             else if (expiryDays == 0)
             {
-                pwStatus = "ok"; // expiry disabled globally
+                pwStatus = "ok";
             }
 
             var vm = new UserViewModel
@@ -111,12 +126,35 @@ public class UsersModel : PageModel
                 PasswordLastChangedAt = user.PasswordLastChangedAt,
                 MustChangePassword = user.MustChangePassword,
                 PasswordStatus = pwStatus,
-                DaysUntilExpiry = daysUntil
+                DaysUntilExpiry = daysUntil,
+                HasLocalPassword = hasPassword,
+                AccountType = ResolveAccountType(hasPassword, providers)
             };
             AllUsers.Add(vm);
             if (!user.IsApproved)
                 PendingUsers.Add(vm);
         }
+    }
+
+    private static string ResolveAccountType(bool hasPassword, List<string>? providers)
+    {
+        var parts = new List<string>();
+
+        if (hasPassword)
+            parts.Add("Local");
+
+        if (providers != null)
+        {
+            if (providers.Any(p => p == "MicrosoftIdentity"))
+                parts.Add("Entra ID");
+            if (providers.Any(p => p == "LDAP"))
+                parts.Add("AD/LDAP");
+        }
+
+        if (parts.Count == 0)
+            parts.Add("Local");
+
+        return string.Join(" + ", parts);
     }
 
     public async Task<IActionResult> OnPostApproveAsync(string userId)

@@ -45,6 +45,7 @@
                 <thead class="table-warning">
                     <tr>
                         <th>Email</th>
+                        <th>Type</th>
                         <th>Registered</th>
                         <th>Actions</th>
                     </tr>
@@ -54,6 +55,7 @@
                     {
                         <tr>
                             <td>@u.Email</td>
+                            <td>@{ RenderAccountBadge(u.AccountType); }</td>
                             <td><small>@u.RegistrationDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</small></td>
                             <td>
                                 <form method="post" asp-page-handler="Approve" class="d-inline">
@@ -95,6 +97,7 @@ else
             <thead class="table-dark">
                 <tr>
                     <th>Email</th>
+                    <th>Type</th>
                     <th>Status</th>
                     <th>Role</th>
                     <th>Password</th>
@@ -110,6 +113,7 @@ else
                             @u.Email
                             @if (u.IsCurrentUser) { <span class="badge bg-secondary ms-1">you</span> }
                         </td>
+                        <td>@{ RenderAccountBadge(u.AccountType); }</td>
                         <td>
                             @if (u.IsApproved) { <span class="badge bg-success">Approved</span> }
                             else { <span class="badge bg-warning text-dark">Pending</span> }
@@ -119,7 +123,8 @@ else
                             else { <span class="badge bg-light text-dark">User</span> }
                         </td>
                         <td>
-                            @{
+                            @if (u.HasLocalPassword)
+                            {
                                 var (badgeClass, badgeText, badgeTitle) = u.PasswordStatus switch
                                 {
                                     "expired"  => ("bg-danger",              "Expired",
@@ -135,10 +140,16 @@ else
                                     _          => ("bg-secondary",           "Not set",
                                                    "Password change date not recorded")
                                 };
+                                <span class="badge @badgeClass" title="@badgeTitle">
+                                    <i class="fa-solid fa-key me-1"></i>@badgeText
+                                </span>
                             }
-                            <span class="badge @badgeClass" title="@badgeTitle">
-                                <i class="fa-solid fa-key me-1"></i>@badgeText
-                            </span>
+                            else
+                            {
+                                <span class="badge bg-light text-muted" title="Authenticates via directory">
+                                    <i class="fa-solid fa-minus me-1"></i>N/A
+                                </span>
+                            }
                         </td>
                         <td><small>@u.RegistrationDate.ToLocalTime().ToString("yyyy-MM-dd")</small></td>
                         <td>
@@ -170,21 +181,24 @@ else
                                         <i class="fa-solid @(u.IsAdmin ? "fa-user-minus" : "fa-user-shield")"></i>
                                     </button>
                                 </form>
-                                <form method="post" asp-page-handler="ForceReset" class="d-inline"
-                                      onsubmit="return confirm('Force a password reset for @u.Email?')">
-                                    <input type="hidden" name="userId" value="@u.Id" />
-                                    <button class="btn btn-sm btn-outline-info me-1" type="submit"
-                                            title="Force password reset — generates a reset link">
-                                        <i class="fa-solid fa-key"></i>
-                                    </button>
-                                </form>
-                                <form method="post" asp-page-handler="GenerateResetLink" class="d-inline">
-                                    <input type="hidden" name="userId" value="@u.Id" />
-                                    <button class="btn btn-sm btn-outline-secondary me-1" type="submit"
-                                            title="Generate a reset link to share manually">
-                                        <i class="fa-solid fa-link"></i>
-                                    </button>
-                                </form>
+                                @if (u.HasLocalPassword)
+                                {
+                                    <form method="post" asp-page-handler="ForceReset" class="d-inline"
+                                          onsubmit="return confirm('Force a password reset for @u.Email?')">
+                                        <input type="hidden" name="userId" value="@u.Id" />
+                                        <button class="btn btn-sm btn-outline-info me-1" type="submit"
+                                                title="Force password reset — generates a reset link">
+                                            <i class="fa-solid fa-key"></i>
+                                        </button>
+                                    </form>
+                                    <form method="post" asp-page-handler="GenerateResetLink" class="d-inline">
+                                        <input type="hidden" name="userId" value="@u.Id" />
+                                        <button class="btn btn-sm btn-outline-secondary me-1" type="submit"
+                                                title="Generate a reset link to share manually">
+                                            <i class="fa-solid fa-link"></i>
+                                        </button>
+                                    </form>
+                                }
                                 <form method="post" asp-page-handler="Reject" class="d-inline"
                                       onsubmit="return confirm('Delete @u.Email permanently?')">
                                     <input type="hidden" name="userId" value="@u.Id" />
@@ -204,3 +218,20 @@ else
         }
     </div>
 </div>
+
+@functions {
+    void RenderAccountBadge(string accountType)
+    {
+        foreach (var part in accountType.Split(" + "))
+        {
+            var trimmed = part.Trim();
+            var (cls, icon) = trimmed switch
+            {
+                "Entra ID" => ("bg-primary",       "fa-brands fa-microsoft"),
+                "AD/LDAP"  => ("bg-info text-dark", "fa-solid fa-sitemap"),
+                _          => ("bg-secondary",      "fa-solid fa-user")
+            };
+            <span class="badge @cls me-1"><i class="@icon me-1"></i>@trimmed</span>
+        }
+    }
+}

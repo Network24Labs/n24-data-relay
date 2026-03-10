@@ -18,6 +18,7 @@ public class SettingsModel : PageModel
     private readonly IConfiguration _rawConfig;
     private readonly IAuditLogger _audit;
     private readonly IFileTransferServiceFactory _transferFactory;
+    private readonly LdapAuthenticationService _ldapService;
     private readonly ILogger<SettingsModel> _logger;
 
     public SettingsModel(
@@ -26,6 +27,7 @@ public class SettingsModel : PageModel
         IConfiguration rawConfig,
         IAuditLogger audit,
         IFileTransferServiceFactory transferFactory,
+        LdapAuthenticationService ldapService,
         ILogger<SettingsModel> logger)
     {
         _config = config;
@@ -33,6 +35,7 @@ public class SettingsModel : PageModel
         _rawConfig = rawConfig;
         _audit = audit;
         _transferFactory = transferFactory;
+        _ldapService = ldapService;
         _logger = logger;
     }
 
@@ -130,9 +133,31 @@ public class SettingsModel : PageModel
         public bool EnableUploadToTransfer { get; set; } = true;
         [Required] public string UploadDirectory { get; set; } = "";
         public bool EnableLocalAccounts { get; set; } = true;
+        public bool EnableSelfRegistration { get; set; } = true;
         public bool RequireApproval { get; set; } = true;
         [Range(0, 3650)] public int PasswordExpiryDays { get; set; } = 90;
         [Range(0, 365)]  public int PasswordExpiryWarningDays { get; set; } = 14;
+        /// <summary>"Local", "Ldap", or "EntraId".</summary>
+        public string DefaultLoginMethod { get; set; } = "Local";
+
+        // ── AD/LDAP ─────────────────────────────────────────────────────────
+        public bool EnableLdap { get; set; }
+        public string LdapHost { get; set; } = "";
+        [Range(1, 65535)] public int LdapPort { get; set; } = 389;
+        public bool LdapUseSsl { get; set; }
+        public bool LdapStartTls { get; set; }
+        public string LdapBaseDn { get; set; } = "";
+        public string LdapBindDn { get; set; } = "";
+        /// <summary>Leave blank to keep the existing password.</summary>
+        public string? LdapBindPassword { get; set; }
+        /// <summary>Path to a file containing the bind password (recommended for production).</summary>
+        public string LdapBindPasswordFile { get; set; } = "";
+        public string LdapUserSearchFilter { get; set; } = "(&(objectClass=user)(sAMAccountName={0}))";
+        public string LdapEmailAttribute { get; set; } = "mail";
+        public string LdapDisplayNameAttribute { get; set; } = "displayName";
+        public string LdapDomainHint { get; set; } = "";
+        public string LdapRequiredGroup { get; set; } = "";
+        [Range(5, 120)] public int LdapConnectionTimeout { get; set; } = 10;
 
         // ── Entra ID (Azure AD) ──────────────────────────────────────────────
         public bool EnableEntraId { get; set; }
@@ -157,6 +182,11 @@ public class SettingsModel : PageModel
     /// </summary>
     public string EntraIdSecretStatus { get; private set; } = "not set";
 
+    /// <summary>
+    /// Status of the LDAP bind password: from env, from config, or not set.
+    /// </summary>
+    public string LdapBindPasswordStatus { get; private set; } = "not set";
+
     public class BrandingInput
     {
         public string CompanyName { get; set; } = "";
@@ -174,6 +204,7 @@ public class SettingsModel : PageModel
     {
         PopulateFromConfig(_config.Value);
         SetEntraIdSecretStatus();
+        SetLdapBindPasswordStatus();
         ApiBaseUrl = $"{Request.Scheme}://{Request.Host}/api/v1";
     }
 
@@ -195,6 +226,27 @@ public class SettingsModel : PageModel
         var envSecret = Environment.GetEnvironmentVariable("AzureAd__ClientSecret")
                      ?? Environment.GetEnvironmentVariable("AZUREAD__CLIENTSECRET");
         EntraIdSecretStatus = !string.IsNullOrEmpty(envSecret) ? "set via environment variable" : "set in config file";
+    }
+
+    private void SetLdapBindPasswordStatus()
+    {
+        var ldap = _config.Value.WebPortal.Authentication.Ldap;
+
+        if (!string.IsNullOrWhiteSpace(ldap.BindPasswordFile))
+        {
+            LdapBindPasswordStatus = System.IO.File.Exists(ldap.BindPasswordFile)
+                ? "set via file" : "file not found";
+            return;
+        }
+
+        var envPw = Environment.GetEnvironmentVariable("N24_LDAP_BIND_PASSWORD");
+        if (!string.IsNullOrEmpty(envPw))
+        {
+            LdapBindPasswordStatus = "set via environment variable";
+            return;
+        }
+
+        LdapBindPasswordStatus = string.IsNullOrEmpty(ldap.BindPassword) ? "not set" : "set in config";
     }
 
     private void PopulateFromConfig(N24DataRelayConfiguration c)
@@ -252,9 +304,27 @@ public class SettingsModel : PageModel
             EnableUploadToTransfer = c.WebPortal.EnableUploadToTransfer,
             UploadDirectory = c.Paths.UploadDirectory,
             EnableLocalAccounts = c.WebPortal.Authentication.EnableLocalAccounts,
+            EnableSelfRegistration = c.WebPortal.Authentication.EnableSelfRegistration,
             RequireApproval = c.WebPortal.Authentication.RequireApproval,
             PasswordExpiryDays = c.WebPortal.Authentication.PasswordExpiryDays,
             PasswordExpiryWarningDays = c.WebPortal.Authentication.PasswordExpiryWarningDays,
+            DefaultLoginMethod = c.WebPortal.Authentication.DefaultLoginMethod,
+            // AD/LDAP
+            EnableLdap = c.WebPortal.Authentication.EnableLdap,
+            LdapHost = c.WebPortal.Authentication.Ldap.Host,
+            LdapPort = c.WebPortal.Authentication.Ldap.Port,
+            LdapUseSsl = c.WebPortal.Authentication.Ldap.UseSsl,
+            LdapStartTls = c.WebPortal.Authentication.Ldap.StartTls,
+            LdapBaseDn = c.WebPortal.Authentication.Ldap.BaseDn,
+            LdapBindDn = c.WebPortal.Authentication.Ldap.BindDn,
+            LdapBindPassword = null, // never pre-fill
+            LdapBindPasswordFile = c.WebPortal.Authentication.Ldap.BindPasswordFile,
+            LdapUserSearchFilter = c.WebPortal.Authentication.Ldap.UserSearchFilter,
+            LdapEmailAttribute = c.WebPortal.Authentication.Ldap.EmailAttribute,
+            LdapDisplayNameAttribute = c.WebPortal.Authentication.Ldap.DisplayNameAttribute,
+            LdapDomainHint = c.WebPortal.Authentication.Ldap.DomainHint,
+            LdapRequiredGroup = c.WebPortal.Authentication.Ldap.RequiredGroup,
+            LdapConnectionTimeout = c.WebPortal.Authentication.Ldap.ConnectionTimeoutSeconds,
             EnableEntraId = c.WebPortal.Authentication.EnableEntraId,
             // Entra ID credentials from raw IConfiguration (top-level AzureAd section)
             EntraIdInstance          = _rawConfig["AzureAd:Instance"]     ?? "https://login.microsoftonline.com/",
@@ -401,6 +471,24 @@ public class SettingsModel : PageModel
         }
     }
 
+    /// <summary>
+    /// AJAX handler — encrypts the supplied plaintext password and writes it to the
+    /// configured BindPasswordFile path, then saves the file path to config.
+    /// </summary>
+    /// <summary>AJAX handler — tests LDAP connectivity using the currently saved settings.</summary>
+    public async Task<IActionResult> OnPostTestLdapAsync()
+    {
+        try
+        {
+            var (ok, msg) = await _ldapService.TestConnectionAsync();
+            return new JsonResult(new { success = ok, message = msg });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, message = ex.Message });
+        }
+    }
+
     public async Task<IActionResult> OnPostSavePortalAsync()
     {
         KeepOnly("Portal");
@@ -436,9 +524,27 @@ public class SettingsModel : PageModel
         cfg.WebPortal.EnableUploadToTransfer = Portal.EnableUploadToTransfer;
         cfg.Paths.UploadDirectory = Portal.UploadDirectory.Trim();
         cfg.WebPortal.Authentication.EnableLocalAccounts = Portal.EnableLocalAccounts;
+        cfg.WebPortal.Authentication.EnableSelfRegistration = Portal.EnableSelfRegistration;
         cfg.WebPortal.Authentication.RequireApproval = Portal.RequireApproval;
         cfg.WebPortal.Authentication.PasswordExpiryDays = Portal.PasswordExpiryDays;
         cfg.WebPortal.Authentication.PasswordExpiryWarningDays = Portal.PasswordExpiryWarningDays;
+        cfg.WebPortal.Authentication.DefaultLoginMethod = Portal.DefaultLoginMethod;
+        cfg.WebPortal.Authentication.EnableLdap = Portal.EnableLdap;
+        cfg.WebPortal.Authentication.Ldap.Host = Portal.LdapHost.Trim();
+        cfg.WebPortal.Authentication.Ldap.Port = Portal.LdapPort;
+        cfg.WebPortal.Authentication.Ldap.UseSsl = Portal.LdapUseSsl;
+        cfg.WebPortal.Authentication.Ldap.StartTls = Portal.LdapStartTls;
+        cfg.WebPortal.Authentication.Ldap.BaseDn = Portal.LdapBaseDn.Trim();
+        cfg.WebPortal.Authentication.Ldap.BindDn = Portal.LdapBindDn.Trim();
+        if (!string.IsNullOrEmpty(Portal.LdapBindPassword))
+            cfg.WebPortal.Authentication.Ldap.BindPassword = Portal.LdapBindPassword;
+        cfg.WebPortal.Authentication.Ldap.BindPasswordFile = Portal.LdapBindPasswordFile.Trim();
+        cfg.WebPortal.Authentication.Ldap.UserSearchFilter = Portal.LdapUserSearchFilter.Trim();
+        cfg.WebPortal.Authentication.Ldap.EmailAttribute = Portal.LdapEmailAttribute.Trim();
+        cfg.WebPortal.Authentication.Ldap.DisplayNameAttribute = Portal.LdapDisplayNameAttribute.Trim();
+        cfg.WebPortal.Authentication.Ldap.DomainHint = Portal.LdapDomainHint.Trim();
+        cfg.WebPortal.Authentication.Ldap.RequiredGroup = Portal.LdapRequiredGroup.Trim();
+        cfg.WebPortal.Authentication.Ldap.ConnectionTimeoutSeconds = Portal.LdapConnectionTimeout;
         cfg.WebPortal.Authentication.EnableEntraId = Portal.EnableEntraId;
         if (!string.IsNullOrWhiteSpace(Portal.ApiKey))
             cfg.WebPortal.Authentication.ApiKey = Portal.ApiKey.Trim();
@@ -521,7 +627,34 @@ public class SettingsModel : PageModel
         if (active != "service")
             Service = new ServiceInput { WatchDirectory = c.Service.WatchDirectory, TransferMethod = c.Service.TransferMethod, DeleteAfterTransfer = c.Service.DeleteAfterTransfer, ArchiveAfterTransfer = c.Service.ArchiveAfterTransfer, ArchiveDirectory = c.Service.ArchiveDirectory, VerifyTransfer = c.Service.VerifyTransfer, RetryAttempts = c.Service.RetryAttempts, RetryDelaySeconds = c.Service.RetryDelaySeconds, RetryBackoffMultiplier = c.Service.RetryBackoffMultiplier, FileStabilitySeconds = c.Service.FileStabilitySeconds, ProcessingIntervalSeconds = c.Service.ProcessingIntervalSeconds, MaxConcurrentTransfers = c.Service.MaxConcurrentTransfers, MaxQueueSize = c.Service.MaxQueueSize, FileFilter = c.Service.FileFilter };
         if (active != "portal")
-            Portal = new PortalInput { HttpPort = c.WebPortal.Kestrel.HttpPort, HttpsPort = c.WebPortal.Kestrel.HttpsPort, EnableHttps = c.WebPortal.Kestrel.EnableHttps, CertificatePath = c.WebPortal.Kestrel.CertificatePath, MaxFileSizeGb = Math.Round(c.WebPortal.MaxFileSizeBytes / (1024.0 * 1024 * 1024), 2), BlockedExtensions = string.Join(", ", c.WebPortal.BlockedFileExtensions ?? new()), EnableUploadToTransfer = c.WebPortal.EnableUploadToTransfer, UploadDirectory = c.Paths.UploadDirectory, EnableLocalAccounts = c.WebPortal.Authentication.EnableLocalAccounts, RequireApproval = c.WebPortal.Authentication.RequireApproval, PasswordExpiryDays = c.WebPortal.Authentication.PasswordExpiryDays, PasswordExpiryWarningDays = c.WebPortal.Authentication.PasswordExpiryWarningDays, EnableEntraId = c.WebPortal.Authentication.EnableEntraId, EntraIdInstance = _rawConfig["AzureAd:Instance"] ?? "https://login.microsoftonline.com/", EntraIdTenantId = _rawConfig["AzureAd:TenantId"] ?? "", EntraIdClientId = _rawConfig["AzureAd:ClientId"] ?? "", EntraIdCallbackPath = _rawConfig["AzureAd:CallbackPath"] ?? "/signin-oidc", EntraIdCredentialMode = _rawConfig["AzureAd:ClientCredentials:0:SourceType"] == "SignedAssertionFromManagedIdentity" ? "ManagedIdentity" : "Secret", ManagedIdentityClientId = _rawConfig["AzureAd:ClientCredentials:0:ManagedIdentityClientId"] };
+        {
+            var a = c.WebPortal.Authentication;
+            Portal = new PortalInput
+            {
+                HttpPort = c.WebPortal.Kestrel.HttpPort, HttpsPort = c.WebPortal.Kestrel.HttpsPort,
+                EnableHttps = c.WebPortal.Kestrel.EnableHttps, CertificatePath = c.WebPortal.Kestrel.CertificatePath,
+                MaxFileSizeGb = Math.Round(c.WebPortal.MaxFileSizeBytes / (1024.0 * 1024 * 1024), 2),
+                BlockedExtensions = string.Join(", ", c.WebPortal.BlockedFileExtensions ?? new()),
+                EnableUploadToTransfer = c.WebPortal.EnableUploadToTransfer, UploadDirectory = c.Paths.UploadDirectory,
+                EnableLocalAccounts = a.EnableLocalAccounts, EnableSelfRegistration = a.EnableSelfRegistration,
+                RequireApproval = a.RequireApproval,
+                PasswordExpiryDays = a.PasswordExpiryDays, PasswordExpiryWarningDays = a.PasswordExpiryWarningDays,
+                DefaultLoginMethod = a.DefaultLoginMethod,
+                EnableLdap = a.EnableLdap,
+                LdapHost = a.Ldap.Host, LdapPort = a.Ldap.Port, LdapUseSsl = a.Ldap.UseSsl, LdapStartTls = a.Ldap.StartTls,
+                LdapBaseDn = a.Ldap.BaseDn, LdapBindDn = a.Ldap.BindDn, LdapBindPassword = null, LdapBindPasswordFile = a.Ldap.BindPasswordFile,
+                LdapUserSearchFilter = a.Ldap.UserSearchFilter, LdapEmailAttribute = a.Ldap.EmailAttribute,
+                LdapDisplayNameAttribute = a.Ldap.DisplayNameAttribute, LdapDomainHint = a.Ldap.DomainHint,
+                LdapRequiredGroup = a.Ldap.RequiredGroup, LdapConnectionTimeout = a.Ldap.ConnectionTimeoutSeconds,
+                EnableEntraId = a.EnableEntraId,
+                EntraIdInstance = _rawConfig["AzureAd:Instance"] ?? "https://login.microsoftonline.com/",
+                EntraIdTenantId = _rawConfig["AzureAd:TenantId"] ?? "",
+                EntraIdClientId = _rawConfig["AzureAd:ClientId"] ?? "",
+                EntraIdCallbackPath = _rawConfig["AzureAd:CallbackPath"] ?? "/signin-oidc",
+                EntraIdCredentialMode = _rawConfig["AzureAd:ClientCredentials:0:SourceType"] == "SignedAssertionFromManagedIdentity" ? "ManagedIdentity" : "Secret",
+                ManagedIdentityClientId = _rawConfig["AzureAd:ClientCredentials:0:ManagedIdentityClientId"]
+            };
+        }
         if (active != "branding")
             Branding = new BrandingInput { CompanyName = c.Branding.CompanyName, SiteName = c.Branding.SiteName, SupportEmail = c.Branding.SupportEmail, PrimaryColor = c.Branding.Theme.PrimaryColor, DmzSideName = c.Branding.DmzSideName, ScadaSideName = c.Branding.ScadaSideName };
     }

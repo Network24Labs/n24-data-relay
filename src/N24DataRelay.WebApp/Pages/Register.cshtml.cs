@@ -49,7 +49,8 @@ public class RegisterModel : PageModel
 
     public IActionResult OnGet()
     {
-        if (!_configMonitor.CurrentValue.WebPortal.Authentication.EnableLocalAccounts)
+        var auth = _configMonitor.CurrentValue.WebPortal.Authentication;
+        if (!auth.EnableLocalAccounts || !auth.EnableSelfRegistration)
             return RedirectToPage("/Login");
         return Page();
     }
@@ -57,7 +58,8 @@ public class RegisterModel : PageModel
     public async Task<IActionResult> OnPostAsync(string? returnUrl = null)
     {
         returnUrl ??= Url.Content("~/");
-        if (!_configMonitor.CurrentValue.WebPortal.Authentication.EnableLocalAccounts)
+        var auth = _configMonitor.CurrentValue.WebPortal.Authentication;
+        if (!auth.EnableLocalAccounts || !auth.EnableSelfRegistration)
             return RedirectToPage("/Login");
 
         if (!ModelState.IsValid)

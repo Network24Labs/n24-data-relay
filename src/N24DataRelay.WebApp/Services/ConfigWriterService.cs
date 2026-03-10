@@ -65,6 +65,7 @@ public class ConfigWriterService
         // Values already carrying the "ENC:" prefix are left untouched.
         config.Transfer.Ssh.PasswordEncrypted = EncryptIfPlaintext(config.Transfer.Ssh.PasswordEncrypted);
         config.Transfer.Smb.PasswordEncrypted = EncryptIfPlaintext(config.Transfer.Smb.PasswordEncrypted);
+        config.WebPortal.Authentication.Ldap.BindPassword = EncryptIfPlaintext(config.WebPortal.Authentication.Ldap.BindPassword) ?? string.Empty;
         return MergeTopLevelAsync("N24DataRelay", config, keyToPreserve: null);
     }
 

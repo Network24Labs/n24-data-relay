@@ -88,8 +88,15 @@ public class AuthenticationSettings
 {
     public bool EnableEntraId { get; set; } = false;
     public bool EnableLocalAccounts { get; set; } = true;
+    /// <summary>When false the <c>/Register</c> page is disabled; existing local accounts can still sign in.</summary>
+    public bool EnableSelfRegistration { get; set; } = true;
+    public bool EnableLdap { get; set; } = false;
+    public LdapSettings Ldap { get; set; } = new();
+    /// <summary>Which sign-in form is shown by default on the login page: <c>"Local"</c>, <c>"Ldap"</c>, or <c>"EntraId"</c>.</summary>
+    public string DefaultLoginMethod { get; set; } = "Local";
     public string ConnectionString { get; set; } = "Data Source=/var/lib/n24-data-relay/n24datarelay.db";
     public bool RequireEmailConfirmation { get; set; } = false;
+    /// <summary>Require admin approval for new <b>local</b> accounts. Directory-backed users (Entra/LDAP) are auto-approved.</summary>
     public bool RequireApproval { get; set; } = true;
     /// <summary>Number of days before a local-account password expires. 0 = never expires.</summary>
     public int PasswordExpiryDays { get; set; } = 90;
@@ -100,6 +107,49 @@ public class AuthenticationSettings
     /// Prefer the <c>N24DataRelay__WebPortal__Authentication__ApiKey</c> environment variable.
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
+}
+
+public class LdapSettings
+{
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; } = 389;
+    public bool UseSsl { get; set; } = false;
+    public bool StartTls { get; set; } = false;
+    /// <summary>Base DN for the user search, e.g. <c>DC=corp,DC=example,DC=com</c>.</summary>
+    public string BaseDn { get; set; } = string.Empty;
+    /// <summary>Service account DN used for the initial bind and user search. Leave empty for anonymous bind.</summary>
+    public string BindDn { get; set; } = string.Empty;
+    /// <summary>
+    /// Service account password, encrypted at rest by Data Protection.
+    /// For production prefer <see cref="BindPasswordFile"/> or the
+    /// <c>N24_LDAP_BIND_PASSWORD</c> environment variable instead.
+    /// </summary>
+    public string BindPassword { get; set; } = string.Empty;
+    /// <summary>
+    /// Absolute path to a file whose first line contains the bind password.
+    /// Recommended for production — works with systemd <c>LoadCredential=</c>,
+    /// Docker/Podman secrets, and Kubernetes secret mounts.
+    /// Takes priority over <see cref="BindPassword"/> and the environment variable.
+    /// </summary>
+    public string BindPasswordFile { get; set; } = string.Empty;
+    /// <summary>
+    /// LDAP search filter with <c>{0}</c> placeholder for the login input.
+    /// AD default: <c>(&amp;(objectClass=user)(sAMAccountName={0}))</c>.
+    /// OpenLDAP: <c>(&amp;(objectClass=inetOrgPerson)(uid={0}))</c>.
+    /// </summary>
+    public string UserSearchFilter { get; set; } = "(&(objectClass=user)(sAMAccountName={0}))";
+    /// <summary>LDAP attribute containing the user's email address.</summary>
+    public string EmailAttribute { get; set; } = "mail";
+    /// <summary>LDAP attribute containing the user's display name.</summary>
+    public string DisplayNameAttribute { get; set; } = "displayName";
+    /// <summary>Domain prefix shown in the login placeholder, e.g. <c>CORP</c>.</summary>
+    public string DomainHint { get; set; } = string.Empty;
+    /// <summary>
+    /// DN or common name of a security group the user must be a member of.
+    /// Leave empty to allow any authenticated AD user.
+    /// </summary>
+    public string RequiredGroup { get; set; } = string.Empty;
+    public int ConnectionTimeoutSeconds { get; set; } = 10;
 }
 
 public class KestrelSettings

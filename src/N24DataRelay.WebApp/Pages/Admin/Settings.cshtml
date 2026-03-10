@@ -500,17 +500,32 @@
             <div class="card mb-4">
                 <div class="card-header fw-semibold"><i class="fa-solid fa-user-shield me-2"></i>Authentication</div>
                 <div class="card-body row g-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" asp-for="Portal.EnableLocalAccounts" />
-                            <label class="form-check-label" asp-for="Portal.EnableLocalAccounts">Enable local account registration</label>
+                            <label class="form-check-label" asp-for="Portal.EnableLocalAccounts">Enable local account sign-in</label>
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Portal.EnableSelfRegistration" />
+                            <label class="form-check-label" asp-for="Portal.EnableSelfRegistration">Allow self-registration</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" asp-for="Portal.RequireApproval" />
-                            <label class="form-check-label" asp-for="Portal.RequireApproval">Require admin approval for new accounts</label>
+                            <label class="form-check-label" asp-for="Portal.RequireApproval">Require approval (local only)</label>
                         </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Portal.DefaultLoginMethod" class="form-label">Default Login Method</label>
+                        <select asp-for="Portal.DefaultLoginMethod" class="form-select">
+                            <option value="Local">Local Account</option>
+                            <option value="Ldap">AD/LDAP</option>
+                            <option value="EntraId">Entra ID (Microsoft)</option>
+                        </select>
+                        <div class="form-text">Shown first on the login page. Other methods are accessible via "Other sign-in options".</div>
                     </div>
                     <div class="col-md-4">
                         <label asp-for="Portal.PasswordExpiryDays" class="form-label">Password Expiry (days)</label>
@@ -524,6 +539,157 @@
                         <div class="form-text">0 = no warning banner.</div>
                         <span asp-validation-for="Portal.PasswordExpiryWarningDays" class="text-danger small"></span>
                     </div>
+                    <div class="col-12">
+                        <div class="alert alert-secondary py-2 mb-0 small">
+                            <i class="fa-solid fa-circle-info me-1"></i>
+                            <strong>Require approval</strong> only applies to local self-registration.
+                            Directory-backed users (Entra ID, AD/LDAP) are auto-approved — access is controlled by
+                            Entra enterprise app assignment and LDAP security groups respectively.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── AD/LDAP card ────────────────────────────────────────────────── *@
+            <div class="card mb-4 border-info">
+                <div class="card-header fw-semibold bg-info bg-opacity-10">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" asp-for="Portal.EnableLdap" id="ldapToggle" />
+                        <label class="form-check-label fw-semibold" asp-for="Portal.EnableLdap">
+                            <i class="fa-solid fa-sitemap me-1"></i>Enable AD/LDAP Authentication
+                        </label>
+                    </div>
+                </div>
+                <div id="ldapFields" class="card-body row g-3">
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 mb-0 small">
+                            <i class="fa-solid fa-circle-info me-1"></i>
+                            Connect to an Active Directory or OpenLDAP server for user authentication.
+                            Changes take effect immediately (no restart required).
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="Portal.LdapHost" class="form-label">LDAP Host <span class="text-danger">*</span></label>
+                        <input asp-for="Portal.LdapHost" class="form-control font-monospace" placeholder="dc01.corp.example.com" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="Portal.LdapPort" class="form-label">Port</label>
+                        <input asp-for="Portal.LdapPort" type="number" class="form-control" min="1" max="65535" />
+                        <span asp-validation-for="Portal.LdapPort" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-3 d-flex flex-column justify-content-end pb-1 gap-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Portal.LdapUseSsl" />
+                            <label class="form-check-label" asp-for="Portal.LdapUseSsl">SSL (port 636)</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="Portal.LdapStartTls" />
+                            <label class="form-check-label" asp-for="Portal.LdapStartTls">StartTLS</label>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <label asp-for="Portal.LdapBaseDn" class="form-label">Base DN <span class="text-danger">*</span></label>
+                        <input asp-for="Portal.LdapBaseDn" class="form-control font-monospace" placeholder="DC=corp,DC=example,DC=com" />
+                        <div class="form-text">The search base for locating user accounts.</div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="Portal.LdapBindDn" class="form-label">Bind DN (service account)</label>
+                        <input asp-for="Portal.LdapBindDn" class="form-control font-monospace" placeholder="CN=svc-relay,OU=Service Accounts,DC=corp,DC=example,DC=com" />
+                        <div class="form-text">Leave empty for anonymous bind (not supported by most AD servers).</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Portal.LdapBindPassword" class="form-label">Bind Password</label>
+                        <div class="input-group">
+                            <input asp-for="Portal.LdapBindPassword" type="password" class="form-control font-monospace"
+                                   placeholder="Leave blank to keep existing" autocomplete="new-password" id="ldapBindPwInput" />
+                            <button class="btn btn-outline-secondary" type="button" id="toggleLdapBindPw" title="Show/hide">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                        @{
+                            var ldapPwBadge = Model.LdapBindPasswordStatus == "not set" ? "bg-warning text-dark" : "bg-success";
+                        }
+                        <div class="form-text d-flex align-items-center gap-2 mt-1">
+                            Status: <span class="badge @ldapPwBadge">@Model.LdapBindPasswordStatus</span>
+                        </div>
+
+                        <a class="text-decoration-none small mt-2 d-inline-block"
+                           data-bs-toggle="collapse" href="#ldapAdvancedSecrets">
+                            <i class="fa-solid fa-chevron-down fa-xs me-1"></i>Advanced (external secret management)
+                        </a>
+                        <div class="collapse mt-2" id="ldapAdvancedSecrets">
+                            <div class="card card-body bg-body-secondary p-2">
+                                <label asp-for="Portal.LdapBindPasswordFile" class="form-label small mb-1">Bind Password File</label>
+                                <input asp-for="Portal.LdapBindPasswordFile" class="form-control form-control-sm font-monospace"
+                                       placeholder="/run/credentials/n24-data-relay/ldap-bind-password" />
+                                <div class="form-text mt-1">
+                                    When set, the app reads the bind password from this file at runtime (plaintext or <code>ENC:</code>-prefixed),
+                                    taking priority over the field above. Works with systemd <code>LoadCredential=</code>,
+                                    Docker/Podman secrets, and Kubernetes secret mounts.
+                                    The <code>N24_LDAP_BIND_PASSWORD</code> environment variable is also supported.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <label asp-for="Portal.LdapUserSearchFilter" class="form-label">User Search Filter</label>
+                        <input asp-for="Portal.LdapUserSearchFilter" class="form-control font-monospace" />
+                        <div class="form-text">
+                            Use <code>{0}</code> as the placeholder for the username.
+                            AD: <code>(&amp;(objectClass=user)(sAMAccountName={0}))</code> —
+                            OpenLDAP: <code>(&amp;(objectClass=inetOrgPerson)(uid={0}))</code>
+                        </div>
+                    </div>
+
+                    <div class="col-md-8">
+                        <label asp-for="Portal.LdapRequiredGroup" class="form-label">Required Security Group</label>
+                        <input asp-for="Portal.LdapRequiredGroup" class="form-control font-monospace"
+                               placeholder="CN=N24-DataRelay-Users,OU=Security Groups,DC=corp,DC=example,DC=com" />
+                        <div class="form-text">
+                            Full DN or just the group name (CN). Users not in this group are denied access.
+                            Leave empty to allow any authenticated AD user.
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Portal.LdapDomainHint" class="form-label">Domain Hint</label>
+                        <input asp-for="Portal.LdapDomainHint" class="form-control font-monospace" placeholder="CORP" />
+                        <div class="form-text">Shown in the login placeholder (e.g. CORP\username).</div>
+                    </div>
+
+                    @* ── Advanced ─────────────────────────────────────── *@
+                    <div class="col-12">
+                        <a class="text-decoration-none small" data-bs-toggle="collapse" href="#ldapAdvanced">
+                            <i class="fa-solid fa-chevron-down me-1"></i>Advanced options
+                        </a>
+                        <div class="collapse mt-2" id="ldapAdvanced">
+                            <div class="card card-body bg-body-secondary row g-3">
+                                <div class="col-md-4">
+                                    <label asp-for="Portal.LdapEmailAttribute" class="form-label">Email Attribute</label>
+                                    <input asp-for="Portal.LdapEmailAttribute" class="form-control font-monospace" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label asp-for="Portal.LdapDisplayNameAttribute" class="form-label">Display Name Attribute</label>
+                                    <input asp-for="Portal.LdapDisplayNameAttribute" class="form-control font-monospace" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label asp-for="Portal.LdapConnectionTimeout" class="form-label">Connection Timeout (s)</label>
+                                    <input asp-for="Portal.LdapConnectionTimeout" type="number" class="form-control" min="5" max="120" />
+                                    <span asp-validation-for="Portal.LdapConnectionTimeout" class="text-danger small"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer d-flex justify-content-end">
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="testLdapConnection(this)"
+                            title="Tests connectivity using the currently saved LDAP settings">
+                        <i class="fa-solid fa-plug me-1"></i>Test LDAP Connection
+                    </button>
                 </div>
             </div>
 
@@ -1007,6 +1173,25 @@ sources:
     function toggleCert() { certRow.style.display = httpsChk.checked ? '' : 'none'; }
     if (httpsChk) { httpsChk.addEventListener('change', toggleCert); toggleCert(); }
 
+    // ── LDAP fields show/hide ──
+    const ldapToggle = document.getElementById('ldapToggle');
+    const ldapFields = document.getElementById('ldapFields');
+    function toggleLdap() {
+        if (ldapFields) ldapFields.style.display = ldapToggle?.checked ? '' : 'none';
+    }
+    if (ldapToggle) { ldapToggle.addEventListener('change', toggleLdap); toggleLdap(); }
+
+    // ── Show/hide LDAP bind password ──
+    const ldapBindPwInput  = document.getElementById('ldapBindPwInput');
+    const toggleLdapBindPw = document.getElementById('toggleLdapBindPw');
+    if (toggleLdapBindPw && ldapBindPwInput) {
+        toggleLdapBindPw.addEventListener('click', () => {
+            const isText = ldapBindPwInput.type === 'text';
+            ldapBindPwInput.type = isText ? 'password' : 'text';
+            toggleLdapBindPw.querySelector('i').className = isText ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+        });
+    }
+
     // ── Entra ID fields show/hide ──
     const entraToggle = document.getElementById('entraToggle');
     const entraFields = document.getElementById('entraFields');
@@ -1076,6 +1261,40 @@ async function testConnection(btn) {
     try {
         const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
         const resp  = await fetch('?handler=TestConnection', {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': token, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: '__RequestVerificationToken=' + encodeURIComponent(token)
+        });
+        const data = await resp.json();
+        const badge = document.createElement('span');
+        badge.className = 'test-result badge ms-2 ' + (data.success ? 'bg-success' : 'bg-danger');
+        badge.innerHTML = (data.success ? '<i class="fa-solid fa-check me-1"></i>' : '<i class="fa-solid fa-xmark me-1"></i>') + data.message;
+        btn.insertAdjacentElement('afterend', badge);
+        setTimeout(() => badge.remove(), 8000);
+    } catch (e) {
+        const badge = document.createElement('span');
+        badge.className = 'test-result badge bg-danger ms-2';
+        badge.textContent = 'Request failed: ' + e.message;
+        btn.insertAdjacentElement('afterend', badge);
+        setTimeout(() => badge.remove(), 8000);
+    } finally {
+        btn.disabled = false;
+        if (icon) icon.className = origCls;
+    }
+}
+
+// ── Test LDAP Connection (AJAX — uses currently saved config) ──
+async function testLdapConnection(btn) {
+    const icon    = btn.querySelector('i');
+    const origCls = icon ? icon.className : '';
+    btn.disabled = true;
+    if (icon) icon.className = 'fa-solid fa-spinner fa-spin me-1';
+    const prev = btn.parentElement.querySelector('.test-result');
+    if (prev) prev.remove();
+
+    try {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+        const resp  = await fetch('?handler=TestLdap', {
             method: 'POST',
             headers: { 'RequestVerificationToken': token, 'Content-Type': 'application/x-www-form-urlencoded' },
             body: '__RequestVerificationToken=' + encodeURIComponent(token)
