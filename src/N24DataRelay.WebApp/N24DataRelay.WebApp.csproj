@@ -7,7 +7,7 @@
     <RootNamespace>N24DataRelay.WebApp</RootNamespace>
     <AssemblyName>N24DataRelay.WebApp</AssemblyName>
     <PackageId>N24DataRelay.WebApp</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <PackageLicenseExpression>LGPL-3.0-or-later</PackageLicenseExpression>
     <OutputType>Library</OutputType>
     <!-- XML doc comments fed into Swagger -->

@@ -14,7 +14,7 @@ public class AboutModel : PageModel
     {
         var entry = Assembly.GetEntryAssembly();
         var version = entry?.GetName().Version;
-        Version = version?.ToString(3) ?? version?.ToString() ?? "0.1.0";
+        Version = version?.ToString(3) ?? version?.ToString() ?? "0.2.0";
 
         var location = entry?.Location;
         if (!string.IsNullOrEmpty(location) && System.IO.File.Exists(location))
