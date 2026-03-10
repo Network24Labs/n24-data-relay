@@ -33,6 +33,7 @@ dotnet run
 | Web upload portal (Razor Pages + Bootstrap) | Done |
 | Real-time transfer status (SignalR) | Done |
 | Local account auth (ASP.NET Core Identity) | Done |
+| AD/LDAP authentication (bind + user search, group-based access) | Done |
 | Password expiry + forced reset + email reset | Done |
 | Entra ID (Azure AD) OIDC auth | Done |
 | Managed Identity (Azure Arc) option | Done |
@@ -60,6 +61,16 @@ The `/api/v1` endpoints allow external tools (LogScale, Grafana, custom scripts)
 | `GET /api/v1/audit?since=<ISO8601>&limit=500` | Bearer API key | Audit events |
 
 Configure the API key in **Admin → Settings → Portal → Monitoring API Key** or via the `N24DataRelay__WebPortal__Authentication__ApiKey` environment variable.
+
+## Authentication
+
+The portal supports three sign-in methods, configurable in **Admin → Settings**:
+
+- **Local** — ASP.NET Core Identity (SQLite). Optional self-registration can be disabled; existing local accounts (including admins) can still sign in.
+- **AD/LDAP** — Bind to Active Directory or OpenLDAP; user search and optional `memberOf` group check. Bind password can be stored encrypted in config, in a file (e.g. systemd `LoadCredential=`, Docker/K8s secrets), or via the `N24_LDAP_BIND_PASSWORD` environment variable.
+- **Entra ID (Azure AD)** — OIDC with optional group-based app assignment.
+
+The admin can set a **default login method** so users see one form by default; other enabled methods remain available (e.g. “Other sign-in options”). Entra ID and AD/LDAP users are auto-approved on first sign-in; local self-registrations use the approval workflow.
 
 ## Releases and verification
 
