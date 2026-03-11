@@ -179,6 +179,81 @@ public sealed class ScpFileTransferService : IFileTransferService
         }
     }
 
+    /// <summary>Writes a small probe file to the destination path and verifies it (v1). Fail loudly on wrong path.</summary>
+    public async Task<(bool Success, string? ErrorMessage)> TestConnectionToPathAsync(CancellationToken cancellationToken = default)
+        => await TestConnectionToPathAsync(_config.Transfer.Ssh, _config.Transfer.Ssh.DestinationPath, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Tests SSH connection and path writability using the given settings (e.g. for a linked peer).</summary>
+    public async Task<(bool Success, string? ErrorMessage)> TestConnectionToPathAsync(SshSettings ssh, string destinationPath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(ssh.Host))
+            return (false, "Host is not configured.");
+        if (string.IsNullOrWhiteSpace(destinationPath))
+            return (false, "Destination path is not configured.");
+        var connectionInfo = CreateConnectionInfo(ssh);
+        if (connectionInfo == null)
+            return (false, "Could not create SSH connection (check key or password).");
+
+        var probeName = ".n24-relay-test-" + DateTime.UtcNow.Ticks;
+        var remotePath = destinationPath.TrimEnd('/', '\\');
+        var probeFullPath = remotePath + "/" + probeName;
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var client = new SftpClient(connectionInfo);
+                client.HostKeyReceived += (_, args) => HandleHostKey(args, ssh);
+                client.Connect();
+
+                try
+                {
+                    // Ensure directory exists (SFTP will fail upload if not)
+                    if (!client.Exists(remotePath))
+                    {
+                        try
+                        {
+                            client.CreateDirectory(remotePath);
+                        }
+                        catch (Exception ex)
+                        {
+                            throw new InvalidOperationException($"Path not found and could not create directory: {remotePath}. {ex.Message}", ex);
+                        }
+                    }
+
+                    // Write probe file
+                    using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("n24-relay-path-test")))
+                    {
+                        client.UploadFile(stream, probeFullPath);
+                    }
+
+                    // Verify: stat the file
+                    var attrs = client.GetAttributes(probeFullPath);
+                    if (attrs == null || !attrs.IsRegularFile)
+                        throw new InvalidOperationException("Probe file was written but could not be verified (stat failed).");
+
+                    // Remove probe file
+                    try { client.DeleteFile(probeFullPath); } catch { /* best effort */ }
+                }
+                finally
+                {
+                    client.Disconnect();
+                }
+            }, cancellationToken).ConfigureAwait(false);
+
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            if (msg.Contains("No such file", StringComparison.OrdinalIgnoreCase) || msg.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                return (false, $"Path not found or not accessible: {destinationPath}. Check that the path exists and the SSH user can write to it.");
+            if (msg.Contains("permission", StringComparison.OrdinalIgnoreCase) || msg.Contains("denied", StringComparison.OrdinalIgnoreCase))
+                return (false, "Permission denied writing to the destination path. Check SSH user and directory permissions.");
+            return (false, $"Connection or path test failed: {msg}");
+        }
+    }
+
     public async Task<bool> VerifyTransferAsync(string sourceFilePath, string destinationPath, CancellationToken cancellationToken = default)
     {
         try

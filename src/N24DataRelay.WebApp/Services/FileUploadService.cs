@@ -1,8 +1,10 @@
+using System.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Interfaces;
 using N24DataRelay.Core.Models;
+using N24DataRelay.Core.Services;
 
 namespace N24DataRelay.WebApp.Services;
 
@@ -92,9 +94,11 @@ public class FileUploadService
         return result;
     }
 
-    public async Task<List<UploadResult>> UploadFormFilesAsync(List<IFormFile> files, string uploadedBy, bool requiresTransfer = false, string? notes = null, CancellationToken cancellationToken = default)
+    public async Task<List<UploadResult>> UploadFormFilesAsync(List<IFormFile> files, string uploadedBy, bool requiresTransfer = false, string? notes = null, string? transferDestinationPath = null, CancellationToken cancellationToken = default)
     {
-        var destination = requiresTransfer ? Config.Service.WatchDirectory : Config.Paths.UploadDirectory;
+        var destination = requiresTransfer
+            ? (string.IsNullOrEmpty(transferDestinationPath) ? Config.Service.WatchDirectory : transferDestinationPath)
+            : Config.Paths.UploadDirectory;
         var results = new List<UploadResult>();
         foreach (var file in files)
         {
@@ -105,8 +109,17 @@ public class FileUploadService
         return results;
     }
 
-    public string GetUploadDestination(bool requiresTransfer) =>
-        requiresTransfer ? Config.Service.WatchDirectory : Config.Paths.UploadDirectory;
+    public string GetUploadDestination(bool requiresTransfer, string? transferDestinationPath = null) =>
+        requiresTransfer
+            ? (string.IsNullOrEmpty(transferDestinationPath) ? Config.Service.WatchDirectory : transferDestinationPath)
+            : Config.Paths.UploadDirectory;
+
+    /// <summary>Returns effective routes for multi-target UI (Upload "Send to X" options).</summary>
+    public IReadOnlyList<(string WatchPath, string RouteName)> GetEffectiveRoutesForUpload()
+    {
+        var effective = TransferRouteHelper.GetEffectiveRoutes(Config);
+        return effective.Select(r => (r.WatchPath, r.Route.Name)).ToList();
+    }
 
     private bool IsExtensionBlocked(string extension)
     {

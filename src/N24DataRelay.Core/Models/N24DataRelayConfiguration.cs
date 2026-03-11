@@ -9,6 +9,7 @@ public class N24DataRelayConfiguration
     public ServiceSettings Service { get; set; } = new();
     public WebPortalSettings WebPortal { get; set; } = new();
     public TransferSettings Transfer { get; set; } = new();
+    public InstanceLinkingSettings InstanceLinking { get; set; } = new();
     public SmtpSettings Smtp { get; set; } = new();
 }
 
@@ -23,6 +24,8 @@ public class BrandingSettings
     public string DmzSideName { get; set; } = "DMZ";
     /// <summary>Display name for the transfer destination side (e.g. "SCADA", "MPM SCADA"). Shown in UI labels.</summary>
     public string ScadaSideName { get; set; } = "SCADA";
+    /// <summary>Display name for the corporate/third zone (e.g. "CORP", "Corporate"). Used in 3-hop and multi-route UI.</summary>
+    public string CorpSideName { get; set; } = "CORP";
     public ThemeSettings Theme { get; set; } = new();
 }
 
@@ -56,6 +59,10 @@ public class ServiceSettings
     public string ServiceName { get; set; } = "n24-data-relay";
     public string DisplayName { get; set; } = "N24 Data Relay Watcher";
     public string Description { get; set; } = "Automated file transfer from DMZ to SCADA networks";
+    /// <summary>Display name for this instance (e.g. "DMZ", "OT"). Used in UI and audit.</summary>
+    public string? InstanceName { get; set; }
+    /// <summary>Directory on this host that peers should use as SCP destination. Default/empty = use WatchDirectory.</summary>
+    public string? IncomingPath { get; set; }
     public string WatchDirectory { get; set; } = "/var/lib/n24-data-relay/uploads/transfer";
     public string TransferMethod { get; set; } = "ssh";
     public int RetryAttempts { get; set; } = 3;
@@ -165,6 +172,42 @@ public class TransferSettings
 {
     public SshSettings Ssh { get; set; } = new();
     public SmbSettings Smb { get; set; } = new();
+    /// <summary>Outbound routes for multi-target / 3-hop. When empty, single-route mode uses Ssh/Smb + Service.WatchDirectory.</summary>
+    public List<TransferRouteSettings> Routes { get; set; } = new();
+}
+
+/// <summary>One outbound route: a watch path (source) and SSH or SMB target. Used for bidirectional 3-hop and "Send to DMZ / Send to SCADA".</summary>
+public class TransferRouteSettings
+{
+    /// <summary>Display name for this route (e.g. "To CORP", "To SCADA"). Used in UI.</summary>
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Watch path for this route; files in this path are sent to this target. Empty = use Service.WatchDirectory (single-route mode).</summary>
+    public string? SourcePath { get; set; }
+    /// <summary>"ssh" or "smb".</summary>
+    public string TransferMethod { get; set; } = "ssh";
+    public SshSettings Ssh { get; set; } = new();
+    public SmbSettings Smb { get; set; } = new();
+}
+
+/// <summary>Multi-instance linking: this instance's identity and linked peer instances.</summary>
+public class InstanceLinkingSettings
+{
+    /// <summary>Stable GUID for this instance (optional). Used for linking references.</summary>
+    public string? InstanceId { get; set; }
+    /// <summary>Linked peer instances (display name, host, port, path, fingerprint for validation).</summary>
+    public List<LinkedInstanceSettings> LinkedInstances { get; set; } = new();
+}
+
+/// <summary>Descriptor for a linked peer relay instance.</summary>
+public class LinkedInstanceSettings
+{
+    public string Name { get; set; } = string.Empty;
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; } = 22;
+    /// <summary>Remote path peers should use when sending to this instance (for UI/docs).</summary>
+    public string? IncomingPath { get; set; }
+    /// <summary>Expected SHA-256 host key fingerprint for verification (hex, with or without colons).</summary>
+    public string? KnownHostFingerprint { get; set; }
 }
 
 public class SshSettings

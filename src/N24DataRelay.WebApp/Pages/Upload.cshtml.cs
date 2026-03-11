@@ -27,23 +27,32 @@ public class UploadModel : PageModel
     [BindProperty]
     public string? Notes { get; set; }
 
+    /// <summary>When multiple routes, selected route's WatchPath. Null = single route or store-only.</summary>
+    [BindProperty]
+    public string? TransferRoutePath { get; set; }
+
     public bool ShowTransferOption => _configMonitor.CurrentValue.WebPortal.EnableUploadToTransfer;
     public string MaxFileSizeBytesDisplay => FormatBytes(_configMonitor.CurrentValue.WebPortal.MaxFileSizeBytes);
     public string BlockedExtensionsDisplay => string.Join(", ", _configMonitor.CurrentValue.WebPortal.BlockedFileExtensions ?? new List<string>());
     public string DmzSideName => _configMonitor.CurrentValue.Branding.DmzSideName;
     public string ScadaSideName => _configMonitor.CurrentValue.Branding.ScadaSideName;
+    public string CorpSideName => _configMonitor.CurrentValue.Branding.CorpSideName;
+
+    /// <summary>Effective routes for "Send to X" options. When count > 1, show route choice.</summary>
+    public IReadOnlyList<(string WatchPath, string RouteName)> TransferRoutes { get; private set; } = Array.Empty<(string, string)>();
 
     public void OnGet()
     {
+        TransferRoutes = _uploadService.GetEffectiveRoutesForUpload();
     }
 
-    public async Task<IActionResult> OnPostAsync(IFormFileCollection? files)
+    public async Task<IActionResult> OnPostAsync(IFormFileCollection? files, string? transferRoutePath = null)
     {
         if (files == null || files.Count == 0)
             return new JsonResult(new { error = "Please select at least one file." }) { StatusCode = 400 };
 
         var user = User.Identity?.Name ?? "unknown";
-        var results = await _uploadService.UploadFormFilesAsync(files.ToList(), user, RequiresTransfer, Notes).ConfigureAwait(false);
+        var results = await _uploadService.UploadFormFilesAsync(files.ToList(), user, RequiresTransfer, Notes, transferDestinationPath: transferRoutePath).ConfigureAwait(false);
         return new JsonResult(results);
     }
 

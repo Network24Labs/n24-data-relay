@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Interfaces;
 using N24DataRelay.Core.Models;
+using N24DataRelay.Core.Services;
 using N24DataRelay.WebApp.Data;
 using N24DataRelay.WebApp.Services;
 
@@ -42,6 +43,10 @@ public class SettingsModel : PageModel
     public string WritePath => _writer.WritePath;
     public N24DataRelayConfiguration Config => _config.Value;
 
+    /// <summary>Effective outbound routes (for Routes tab and test-per-route).</summary>
+    public IReadOnlyList<(string WatchPath, TransferRouteSettings Route)> EffectiveRoutes =>
+        TransferRouteHelper.GetEffectiveRoutes(Config);
+
     /// <summary>
     /// Absolute path to the SQLite database file, parsed from the connection string.
     /// </summary>
@@ -69,6 +74,8 @@ public class SettingsModel : PageModel
     [BindProperty] public SshInput Ssh { get; set; } = new();
     [BindProperty] public SmbInput Smb { get; set; } = new();
     [BindProperty] public ServiceInput Service { get; set; } = new();
+    [BindProperty] public InstancesInput Instances { get; set; } = new();
+    [BindProperty] public RoutesInput Routes { get; set; } = new();
     [BindProperty] public PortalInput Portal { get; set; } = new();
     [BindProperty] public BrandingInput Branding { get; set; } = new();
 
@@ -106,6 +113,8 @@ public class SettingsModel : PageModel
     {
         [Required] public string WatchDirectory { get; set; } = "";
         public string TransferMethod { get; set; } = "ssh";
+        public string? InstanceName { get; set; }
+        public string? IncomingPath { get; set; }
         public bool DeleteAfterTransfer { get; set; } = true;
         public bool ArchiveAfterTransfer { get; set; } = false;
         public string? ArchiveDirectory { get; set; }
@@ -118,6 +127,55 @@ public class SettingsModel : PageModel
         [Range(1, 50)] public int MaxConcurrentTransfers { get; set; } = 5;
         [Range(10, 100000)] public int MaxQueueSize { get; set; } = 10000;
         public string FileFilter { get; set; } = "*.*";
+    }
+
+    public class InstancesInput
+    {
+        public string? InstanceName { get; set; }
+        public string? IncomingPath { get; set; }
+        public string? InstanceId { get; set; }
+        public List<LinkedInstanceInput> LinkedInstances { get; set; } = new();
+    }
+
+    public class LinkedInstanceInput
+    {
+        public string Name { get; set; } = "";
+        public string Host { get; set; } = "";
+        [Range(1, 65535)] public int Port { get; set; } = 22;
+        public string? IncomingPath { get; set; }
+        public string? KnownHostFingerprint { get; set; }
+    }
+
+    public class RoutesInput
+    {
+        public List<RouteItemInput> RouteList { get; set; } = new();
+    }
+
+    /// <summary>One outbound route for add/edit on the Routes tab.</summary>
+    public class RouteItemInput
+    {
+        public string Name { get; set; } = "";
+        public string? SourcePath { get; set; }
+        public string TransferMethod { get; set; } = "ssh";
+        // SSH
+        public string Host { get; set; } = "";
+        [Range(1, 65535)] public int Port { get; set; } = 22;
+        public string Username { get; set; } = "";
+        public string AuthMethod { get; set; } = "PublicKey";
+        public string? PrivateKeyPath { get; set; }
+        /// <summary>Leave blank to keep existing encrypted password.</summary>
+        public string? Password { get; set; }
+        public string DestinationPath { get; set; } = "";
+        public bool StrictHostKeyChecking { get; set; } = true;
+        public string? KnownHostFingerprint { get; set; }
+        // SMB
+        public string SmbServer { get; set; } = "";
+        public string SmbSharePath { get; set; } = "";
+        public bool SmbUseCredentials { get; set; }
+        public string? SmbUsername { get; set; }
+        public string? SmbDomain { get; set; }
+        /// <summary>If true, this row will be removed on save.</summary>
+        public bool Remove { get; set; }
     }
 
     public class PortalInput
@@ -197,12 +255,20 @@ public class SettingsModel : PageModel
         public string DmzSideName { get; set; } = "DMZ";
         /// <summary>Display name for the transfer destination side (e.g. SCADA, MPM SCADA).</summary>
         public string ScadaSideName { get; set; } = "SCADA";
+        /// <summary>Display name for the corporate/third zone (e.g. CORP, Corporate). Used in 3-hop and multi-route UI.</summary>
+        public string CorpSideName { get; set; } = "CORP";
     }
 
     // ── GET: populate forms from current live config ─────────────────────────
     public void OnGet()
     {
         PopulateFromConfig(_config.Value);
+        if (string.Equals(Request.Query["addRoute"], "1", StringComparison.OrdinalIgnoreCase))
+        {
+            Routes.RouteList ??= new List<RouteItemInput>();
+            Routes.RouteList.Add(new RouteItemInput());
+            ActiveTab = "routes";
+        }
         SetEntraIdSecretStatus();
         SetLdapBindPasswordStatus();
         ApiBaseUrl = $"{Request.Scheme}://{Request.Host}/api/v1";
@@ -280,6 +346,8 @@ public class SettingsModel : PageModel
         {
             WatchDirectory         = c.Service.WatchDirectory,
             TransferMethod         = c.Service.TransferMethod,
+            InstanceName           = c.Service.InstanceName,
+            IncomingPath           = c.Service.IncomingPath ?? "",
             DeleteAfterTransfer    = c.Service.DeleteAfterTransfer,
             ArchiveAfterTransfer   = c.Service.ArchiveAfterTransfer,
             ArchiveDirectory       = c.Service.ArchiveDirectory,
@@ -338,6 +406,40 @@ public class SettingsModel : PageModel
                                        ? "ManagedIdentity" : "Secret",
             ManagedIdentityClientId  = _rawConfig["AzureAd:ClientCredentials:0:ManagedIdentityClientId"]
         };
+        var linked = (c.InstanceLinking.LinkedInstances ?? new List<LinkedInstanceSettings>())
+            .Select(p => new LinkedInstanceInput { Name = p.Name, Host = p.Host, Port = p.Port, IncomingPath = p.IncomingPath, KnownHostFingerprint = p.KnownHostFingerprint }).ToList();
+        if (linked.Count == 0) linked.Add(new LinkedInstanceInput());
+        Instances = new InstancesInput
+        {
+            InstanceName = c.Service.InstanceName,
+            IncomingPath = c.Service.IncomingPath ?? "",
+            InstanceId = c.InstanceLinking.InstanceId,
+            LinkedInstances = linked
+        };
+        var routeList = (c.Transfer.Routes ?? new List<TransferRouteSettings>())
+            .Select(r => new RouteItemInput
+            {
+                Name = r.Name ?? "",
+                SourcePath = r.SourcePath,
+                TransferMethod = string.IsNullOrEmpty(r.TransferMethod) ? "ssh" : r.TransferMethod,
+                Host = r.Ssh?.Host ?? "",
+                Port = r.Ssh?.Port ?? 22,
+                Username = r.Ssh?.Username ?? "",
+                AuthMethod = r.Ssh?.AuthMethod ?? "PublicKey",
+                PrivateKeyPath = r.Ssh?.PrivateKeyPath,
+                Password = null,
+                DestinationPath = r.Ssh?.DestinationPath ?? "",
+                StrictHostKeyChecking = r.Ssh?.StrictHostKeyChecking ?? true,
+                KnownHostFingerprint = r.Ssh?.KnownHostFingerprint,
+                SmbServer = r.Smb?.Server ?? "",
+                SmbSharePath = r.Smb?.SharePath ?? "",
+                SmbUseCredentials = r.Smb?.UseCredentials ?? false,
+                SmbUsername = r.Smb?.Username,
+                SmbDomain = r.Smb?.Domain
+            }).ToList();
+        if (routeList.Count == 0)
+            routeList.Add(new RouteItemInput());
+        Routes = new RoutesInput { RouteList = routeList };
         Branding = new BrandingInput
         {
             CompanyName = c.Branding.CompanyName,
@@ -345,7 +447,8 @@ public class SettingsModel : PageModel
             SupportEmail = c.Branding.SupportEmail,
             PrimaryColor = c.Branding.Theme.PrimaryColor,
             DmzSideName = c.Branding.DmzSideName,
-            ScadaSideName = c.Branding.ScadaSideName
+            ScadaSideName = c.Branding.ScadaSideName,
+            CorpSideName = c.Branding.CorpSideName
         };
     }
 
@@ -425,6 +528,8 @@ public class SettingsModel : PageModel
         var cfg = ConfigWriterService.Clone(_config.Value);
         cfg.Service.WatchDirectory         = Service.WatchDirectory.Trim();
         cfg.Service.TransferMethod         = Service.TransferMethod;
+        cfg.Service.InstanceName           = Service.InstanceName?.Trim();
+        cfg.Service.IncomingPath           = Service.IncomingPath?.Trim();
         cfg.Service.DeleteAfterTransfer    = Service.DeleteAfterTransfer;
         cfg.Service.ArchiveAfterTransfer   = Service.ArchiveAfterTransfer;
         cfg.Service.ArchiveDirectory       = Service.ArchiveDirectory?.Trim() ?? cfg.Service.ArchiveDirectory;
@@ -447,22 +552,21 @@ public class SettingsModel : PageModel
     }
 
     /// <summary>
-    /// AJAX handler — tests connectivity using the currently saved transfer settings.
-    /// Returns JSON: { "success": bool, "message": string }
+    /// AJAX handler — tests connectivity and path writability (writes probe file, verifies). Returns JSON: { "success": bool, "message": string }
     /// </summary>
     public async Task<IActionResult> OnPostTestConnectionAsync()
     {
         try
         {
-            var svc    = _transferFactory.CreateTransferService();
-            var ok     = await svc.TestConnectionAsync(HttpContext.RequestAborted);
+            var svc = _transferFactory.CreateTransferService();
+            var (ok, errorMsg) = await svc.TestConnectionToPathAsync(HttpContext.RequestAborted).ConfigureAwait(false);
             var method = Config.Service.TransferMethod?.ToUpperInvariant() ?? "SSH";
             return new JsonResult(new
             {
                 success = ok,
                 message = ok
-                    ? $"{method} connection test passed."
-                    : $"{method} connection test failed — check host, credentials, and network access."
+                    ? $"{method} connection and path test passed (wrote and verified probe file)."
+                    : (errorMsg ?? $"{method} connection or path test failed — check host, credentials, and destination path.")
             });
         }
         catch (Exception ex)
@@ -585,6 +689,7 @@ public class SettingsModel : PageModel
         cfg.Branding.Theme.PrimaryColor = Branding.PrimaryColor;
         cfg.Branding.DmzSideName = string.IsNullOrWhiteSpace(Branding.DmzSideName) ? "DMZ" : Branding.DmzSideName.Trim();
         cfg.Branding.ScadaSideName = string.IsNullOrWhiteSpace(Branding.ScadaSideName) ? "SCADA" : Branding.ScadaSideName.Trim();
+        cfg.Branding.CorpSideName = string.IsNullOrWhiteSpace(Branding.CorpSideName) ? "CORP" : Branding.CorpSideName.Trim();
 
         await _writer.WriteAsync(cfg);
         ForceConfigReload();
@@ -592,6 +697,191 @@ public class SettingsModel : PageModel
         StatusMessage = "Branding settings saved.";
         ActiveTab = "branding";
         return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostSaveInstancesAsync()
+    {
+        KeepOnly("Instances");
+        if (!ModelState.IsValid)
+        {
+            ActiveTab = "instances";
+            PopulateOtherSections("instances");
+            return Page();
+        }
+
+        var cfg = ConfigWriterService.Clone(_config.Value);
+        cfg.Service.InstanceName = Instances.InstanceName?.Trim();
+        cfg.Service.IncomingPath = string.IsNullOrWhiteSpace(Instances.IncomingPath) ? null : Instances.IncomingPath.Trim();
+        cfg.InstanceLinking.InstanceId = string.IsNullOrWhiteSpace(Instances.InstanceId) ? null : Instances.InstanceId.Trim();
+        cfg.InstanceLinking.LinkedInstances = (Instances.LinkedInstances ?? new List<LinkedInstanceInput>())
+            .Where(p => !string.IsNullOrWhiteSpace(p.Host))
+            .Select(p => new LinkedInstanceSettings
+            {
+                Name = p.Name?.Trim() ?? "",
+                Host = p.Host.Trim(),
+                Port = p.Port,
+                IncomingPath = string.IsNullOrWhiteSpace(p.IncomingPath) ? null : p.IncomingPath.Trim(),
+                KnownHostFingerprint = string.IsNullOrWhiteSpace(p.KnownHostFingerprint) ? null : p.KnownHostFingerprint.Trim()
+            })
+            .ToList();
+
+        await _writer.WriteAsync(cfg);
+        ForceConfigReload();
+        _audit.Log(AuditEventTypes.ConfigSaved, User.Identity?.Name, subject: "Instances");
+        StatusMessage = "Instance linking settings saved.";
+        ActiveTab = "instances";
+        return RedirectToPage();
+    }
+
+    /// <summary>AJAX handler — tests SSH path to a linked peer. Returns JSON: { "success": bool, "message": string }</summary>
+    public async Task<IActionResult> OnPostTestPeerAsync(string host, int port, string destinationPath, string? knownHostFingerprint)
+    {
+        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(destinationPath))
+        {
+            return new JsonResult(new { success = false, message = "Host and destination path are required." });
+        }
+        if (port < 1 || port > 65535) port = 22;
+        try
+        {
+            var (ok, errorMsg) = await _transferFactory.TestSshConnectionToPathAsync(host, port, destinationPath, knownHostFingerprint, HttpContext.RequestAborted).ConfigureAwait(false);
+            return new JsonResult(new
+            {
+                success = ok,
+                message = ok ? "Peer path test passed (wrote and verified probe file)." : (errorMsg ?? "Peer connection or path test failed.")
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Peer connection test failed for {Host}:{Port}", host, port);
+            return new JsonResult(new { success = false, message = ex.Message });
+        }
+    }
+
+    public async Task<IActionResult> OnPostSaveRoutesAsync()
+    {
+        KeepOnly("Routes");
+        if (!ModelState.IsValid)
+        {
+            ActiveTab = "routes";
+            PopulateOtherSections("routes");
+            return Page();
+        }
+
+        var existingRoutes = Config.Transfer.Routes ?? new List<TransferRouteSettings>();
+        var toSave = (Routes.RouteList ?? new List<RouteItemInput>())
+            .Where(r => !r.Remove && (
+                string.Equals(r.TransferMethod, "smb", StringComparison.OrdinalIgnoreCase)
+                    ? !string.IsNullOrWhiteSpace(r.SmbSharePath)
+                    : !string.IsNullOrWhiteSpace(r.Host)))
+            .Select(input =>
+            {
+                var method = string.Equals(input.TransferMethod, "smb", StringComparison.OrdinalIgnoreCase) ? "smb" : "ssh";
+                var existing = existingRoutes.FirstOrDefault(ex =>
+                    string.Equals(ex.Name?.Trim(), input.Name?.Trim(), StringComparison.Ordinal) &&
+                    string.Equals((ex.SourcePath ?? "").Trim(), (input.SourcePath ?? "").Trim(), StringComparison.Ordinal) &&
+                    (method == "ssh" ? ex.Ssh?.Host == input.Host?.Trim() : ex.Smb?.Server == input.SmbServer?.Trim()));
+                var route = new TransferRouteSettings
+                {
+                    Name = input.Name?.Trim() ?? "",
+                    SourcePath = string.IsNullOrWhiteSpace(input.SourcePath) ? null : input.SourcePath.Trim(),
+                    TransferMethod = method,
+                    Ssh = new SshSettings
+                    {
+                        Host = input.Host.Trim(),
+                        Port = input.Port,
+                        Username = input.Username?.Trim() ?? "",
+                        AuthMethod = input.AuthMethod ?? "PublicKey",
+                        PrivateKeyPath = string.IsNullOrWhiteSpace(input.PrivateKeyPath) ? null : input.PrivateKeyPath.Trim(),
+                        DestinationPath = input.DestinationPath?.Trim() ?? "",
+                        StrictHostKeyChecking = input.StrictHostKeyChecking,
+                        KnownHostFingerprint = string.IsNullOrWhiteSpace(input.KnownHostFingerprint) ? null : input.KnownHostFingerprint.Trim()
+                    },
+                    Smb = new SmbSettings
+                    {
+                        Server = input.SmbServer?.Trim() ?? "",
+                        SharePath = input.SmbSharePath?.Trim() ?? "",
+                        UseCredentials = input.SmbUseCredentials,
+                        Username = string.IsNullOrWhiteSpace(input.SmbUsername) ? null : input.SmbUsername.Trim(),
+                        Domain = string.IsNullOrWhiteSpace(input.SmbDomain) ? null : input.SmbDomain.Trim()
+                    }
+                };
+                if (!string.IsNullOrEmpty(input.Password))
+                    route.Ssh.PasswordEncrypted = input.Password;
+                else if (existing?.Ssh != null && !string.IsNullOrEmpty(existing.Ssh.PasswordEncrypted))
+                    route.Ssh.PasswordEncrypted = existing.Ssh.PasswordEncrypted;
+                return route;
+            }).ToList();
+
+        var cfg = ConfigWriterService.Clone(_config.Value);
+        cfg.Transfer.Routes = toSave;
+        await _writer.WriteAsync(cfg);
+        ForceConfigReload();
+        _audit.Log(AuditEventTypes.ConfigSaved, User.Identity?.Name, subject: "Routes");
+        StatusMessage = "Outbound routes saved.";
+        ActiveTab = "routes";
+        return RedirectToPage();
+    }
+
+    /// <summary>AJAX handler — tests path writability for an outbound route by index (effective routes). Returns JSON: { "success": bool, "message": string }</summary>
+    public async Task<IActionResult> OnPostTestRouteAsync(int index)
+    {
+        var routes = TransferRouteHelper.GetEffectiveRoutes(Config);
+        if (index < 0 || index >= routes.Count)
+            return new JsonResult(new { success = false, message = "Invalid route index." });
+        var (_, route) = routes[index];
+        try
+        {
+            var svc = _transferFactory.CreateTransferServiceForRoute(route);
+            var (ok, errorMsg) = await svc.TestConnectionToPathAsync(HttpContext.RequestAborted).ConfigureAwait(false);
+            return new JsonResult(new
+            {
+                success = ok,
+                message = ok ? "Route path test passed (wrote and verified probe file)." : (errorMsg ?? "Route path test failed.")
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Route test failed for index {Index}", index);
+            return new JsonResult(new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>AJAX handler — tests one route from form params (current row values). Returns JSON: { "success": bool, "message": string }</summary>
+    public async Task<IActionResult> OnPostTestRouteParamsAsync(
+        string transferMethod, string host, int port, string username, string destinationPath, string? knownHostFingerprint,
+        string? privateKeyPath, string? smbServer, string? smbSharePath)
+    {
+        var method = string.Equals(transferMethod, "smb", StringComparison.OrdinalIgnoreCase) ? "smb" : "ssh";
+        if (method == "ssh" && (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(destinationPath)))
+            return new JsonResult(new { success = false, message = "Host and destination path are required for SSH." });
+        if (method == "smb" && string.IsNullOrWhiteSpace(smbSharePath))
+            return new JsonResult(new { success = false, message = "Share path is required for SMB." });
+        var route = new TransferRouteSettings
+        {
+            TransferMethod = method,
+            Ssh = new SshSettings
+            {
+                Host = host?.Trim() ?? "",
+                Port = port,
+                Username = username?.Trim() ?? "",
+                AuthMethod = string.IsNullOrWhiteSpace(privateKeyPath) ? "Password" : "PublicKey",
+                PrivateKeyPath = string.IsNullOrWhiteSpace(privateKeyPath) ? null : privateKeyPath.Trim(),
+                DestinationPath = destinationPath?.Trim() ?? "",
+                KnownHostFingerprint = knownHostFingerprint?.Trim()
+            },
+            Smb = new SmbSettings { Server = smbServer?.Trim() ?? "", SharePath = smbSharePath?.Trim() ?? "" }
+        };
+        try
+        {
+            var svc = _transferFactory.CreateTransferServiceForRoute(route);
+            var (ok, errorMsg) = await svc.TestConnectionToPathAsync(HttpContext.RequestAborted).ConfigureAwait(false);
+            return new JsonResult(new { success = ok, message = ok ? "Path test passed." : (errorMsg ?? "Path test failed.") });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Route params test failed");
+            return new JsonResult(new { success = false, message = ex.Message });
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -625,7 +915,7 @@ public class SettingsModel : PageModel
         if (active != "smb")
             Smb = new SmbInput { Server = c.Transfer.Smb.Server, SharePath = c.Transfer.Smb.SharePath, UseCredentials = c.Transfer.Smb.UseCredentials, Username = c.Transfer.Smb.Username, Domain = c.Transfer.Smb.Domain, Timeout = c.Transfer.Smb.Timeout };
         if (active != "service")
-            Service = new ServiceInput { WatchDirectory = c.Service.WatchDirectory, TransferMethod = c.Service.TransferMethod, DeleteAfterTransfer = c.Service.DeleteAfterTransfer, ArchiveAfterTransfer = c.Service.ArchiveAfterTransfer, ArchiveDirectory = c.Service.ArchiveDirectory, VerifyTransfer = c.Service.VerifyTransfer, RetryAttempts = c.Service.RetryAttempts, RetryDelaySeconds = c.Service.RetryDelaySeconds, RetryBackoffMultiplier = c.Service.RetryBackoffMultiplier, FileStabilitySeconds = c.Service.FileStabilitySeconds, ProcessingIntervalSeconds = c.Service.ProcessingIntervalSeconds, MaxConcurrentTransfers = c.Service.MaxConcurrentTransfers, MaxQueueSize = c.Service.MaxQueueSize, FileFilter = c.Service.FileFilter };
+            Service = new ServiceInput { WatchDirectory = c.Service.WatchDirectory, TransferMethod = c.Service.TransferMethod, InstanceName = c.Service.InstanceName, IncomingPath = c.Service.IncomingPath ?? "", DeleteAfterTransfer = c.Service.DeleteAfterTransfer, ArchiveAfterTransfer = c.Service.ArchiveAfterTransfer, ArchiveDirectory = c.Service.ArchiveDirectory, VerifyTransfer = c.Service.VerifyTransfer, RetryAttempts = c.Service.RetryAttempts, RetryDelaySeconds = c.Service.RetryDelaySeconds, RetryBackoffMultiplier = c.Service.RetryBackoffMultiplier, FileStabilitySeconds = c.Service.FileStabilitySeconds, ProcessingIntervalSeconds = c.Service.ProcessingIntervalSeconds, MaxConcurrentTransfers = c.Service.MaxConcurrentTransfers, MaxQueueSize = c.Service.MaxQueueSize, FileFilter = c.Service.FileFilter };
         if (active != "portal")
         {
             var a = c.WebPortal.Authentication;
@@ -656,6 +946,45 @@ public class SettingsModel : PageModel
             };
         }
         if (active != "branding")
-            Branding = new BrandingInput { CompanyName = c.Branding.CompanyName, SiteName = c.Branding.SiteName, SupportEmail = c.Branding.SupportEmail, PrimaryColor = c.Branding.Theme.PrimaryColor, DmzSideName = c.Branding.DmzSideName, ScadaSideName = c.Branding.ScadaSideName };
+            Branding = new BrandingInput { CompanyName = c.Branding.CompanyName, SiteName = c.Branding.SiteName, SupportEmail = c.Branding.SupportEmail, PrimaryColor = c.Branding.Theme.PrimaryColor, DmzSideName = c.Branding.DmzSideName, ScadaSideName = c.Branding.ScadaSideName, CorpSideName = c.Branding.CorpSideName };
+        if (active != "instances")
+        {
+            var linked = (c.InstanceLinking.LinkedInstances ?? new List<LinkedInstanceSettings>())
+                .Select(p => new LinkedInstanceInput { Name = p.Name, Host = p.Host, Port = p.Port, IncomingPath = p.IncomingPath, KnownHostFingerprint = p.KnownHostFingerprint }).ToList();
+            if (linked.Count == 0) linked.Add(new LinkedInstanceInput());
+            Instances = new InstancesInput
+            {
+                InstanceName = c.Service.InstanceName,
+                IncomingPath = c.Service.IncomingPath ?? "",
+                InstanceId = c.InstanceLinking.InstanceId,
+                LinkedInstances = linked
+            };
+        }
+        if (active != "routes")
+        {
+            var routeList = (c.Transfer.Routes ?? new List<TransferRouteSettings>())
+                .Select(r => new RouteItemInput
+                {
+                    Name = r.Name ?? "",
+                    SourcePath = r.SourcePath,
+                    TransferMethod = string.IsNullOrEmpty(r.TransferMethod) ? "ssh" : r.TransferMethod,
+                    Host = r.Ssh?.Host ?? "",
+                    Port = r.Ssh?.Port ?? 22,
+                    Username = r.Ssh?.Username ?? "",
+                    AuthMethod = r.Ssh?.AuthMethod ?? "PublicKey",
+                    PrivateKeyPath = r.Ssh?.PrivateKeyPath,
+                    Password = null,
+                    DestinationPath = r.Ssh?.DestinationPath ?? "",
+                    StrictHostKeyChecking = r.Ssh?.StrictHostKeyChecking ?? true,
+                    KnownHostFingerprint = r.Ssh?.KnownHostFingerprint,
+                    SmbServer = r.Smb?.Server ?? "",
+                    SmbSharePath = r.Smb?.SharePath ?? "",
+                    SmbUseCredentials = r.Smb?.UseCredentials ?? false,
+                    SmbUsername = r.Smb?.Username,
+                    SmbDomain = r.Smb?.Domain
+                }).ToList();
+            if (routeList.Count == 0) routeList.Add(new RouteItemInput());
+            Routes = new RoutesInput { RouteList = routeList };
+        }
     }
 }

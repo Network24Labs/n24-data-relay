@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using N24DataRelay.Core.Interfaces;
 
@@ -9,6 +10,7 @@ public sealed class FileWatcher : IFileWatcher
 {
     private readonly ILogger<FileWatcher> _logger;
     private FileSystemWatcher? _watcher;
+    private List<FileSystemWatcher>? _watchers;
     private readonly object _disposeLock = new();
     private bool _disposed;
 
@@ -22,36 +24,78 @@ public sealed class FileWatcher : IFileWatcher
 
     public void StartWatching(string path, bool includeSubdirectories, string? filter = null)
     {
-        if (_watcher != null)
+        StartWatching(new[] { path }, includeSubdirectories, filter);
+    }
+
+    public void StartWatching(IReadOnlyList<string> paths, bool includeSubdirectories, string? filter = null)
+    {
+        if (_watcher != null || (_watchers != null && _watchers.Count > 0))
             throw new InvalidOperationException("Watcher is already started.");
+        if (paths == null || paths.Count == 0)
+            throw new ArgumentException("At least one path is required.", nameof(paths));
 
         var resolvedFilter = string.IsNullOrWhiteSpace(filter) ? "*.*" : filter.Trim();
 
-        _watcher = new FileSystemWatcher(path)
+        if (paths.Count == 1)
         {
-            Filter                = resolvedFilter,
-            NotifyFilter          = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-            IncludeSubdirectories = includeSubdirectories,
-            EnableRaisingEvents   = true
-        };
+            _watcher = new FileSystemWatcher(paths[0])
+            {
+                Filter                = resolvedFilter,
+                NotifyFilter          = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                IncludeSubdirectories = includeSubdirectories,
+                EnableRaisingEvents   = true
+            };
+            _watcher.Created += OnFileCreated;
+            _watcher.Changed += OnFileChanged;
+            _watcher.Error += OnWatcherError;
+            _logger.LogInformation("File watcher started for path: {Path} (IncludeSubdirectories: {IncludeSub})", paths[0], includeSubdirectories);
+            return;
+        }
 
-        _watcher.Created += OnFileCreated;
-        _watcher.Changed += OnFileChanged;
-        _watcher.Error += OnWatcherError;
-
-        _logger.LogInformation("File watcher started for path: {Path} (IncludeSubdirectories: {IncludeSub})", path, includeSubdirectories);
+        _watchers = new List<FileSystemWatcher>();
+        foreach (var path in paths.Distinct())
+        {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            var w = new FileSystemWatcher(path)
+            {
+                Filter                = resolvedFilter,
+                NotifyFilter          = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                IncludeSubdirectories = includeSubdirectories,
+                EnableRaisingEvents   = true
+            };
+            w.Created += OnFileCreated;
+            w.Changed += OnFileChanged;
+            w.Error += OnWatcherError;
+            _watchers.Add(w);
+        }
+        _logger.LogInformation("File watcher started for {Count} paths (IncludeSubdirectories: {IncludeSub})", _watchers.Count, includeSubdirectories);
     }
 
     public void StopWatching()
     {
         lock (_disposeLock)
         {
-            if (_watcher != null && !_disposed)
+            if (_disposed) return;
+            if (_watcher != null)
             {
                 _watcher.EnableRaisingEvents = false;
                 _watcher.Created -= OnFileCreated;
                 _watcher.Changed -= OnFileChanged;
                 _watcher.Error -= OnWatcherError;
+                _watcher = null;
+                _logger.LogInformation("File watcher stopped.");
+            }
+            if (_watchers != null)
+            {
+                foreach (var w in _watchers)
+                {
+                    w.EnableRaisingEvents = false;
+                    w.Created -= OnFileCreated;
+                    w.Changed -= OnFileChanged;
+                    w.Error -= OnWatcherError;
+                    w.Dispose();
+                }
+                _watchers = null;
                 _logger.LogInformation("File watcher stopped.");
             }
         }
@@ -96,6 +140,8 @@ public sealed class FileWatcher : IFileWatcher
             StopWatching();
             _watcher?.Dispose();
             _watcher = null;
+            _watchers?.ForEach(w => w.Dispose());
+            _watchers = null;
             _disposed = true;
             GC.SuppressFinalize(this);
         }

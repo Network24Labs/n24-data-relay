@@ -10,5 +10,7 @@ public interface IFileWatcher : IDisposable
     ///   Defaults to <c>*.*</c> (all files) when null or empty.
     /// </param>
     void StartWatching(string path, bool includeSubdirectories, string? filter = null);
+    /// <summary>Watch multiple paths (e.g. for multi-route / 3-hop). Each path gets its own watcher.</summary>
+    void StartWatching(IReadOnlyList<string> paths, bool includeSubdirectories, string? filter = null);
     void StopWatching();
 }

@@ -83,6 +83,16 @@
             <i class="fa-solid fa-palette me-1"></i>Branding
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "instances" ? "active" : "")" href="#instances" data-bs-toggle="tab" role="tab">
+            <i class="fa-solid fa-link me-1"></i>Instances
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "routes" ? "active" : "")" href="#routes" data-bs-toggle="tab" role="tab">
+            <i class="fa-solid fa-route me-1"></i>Routes
+        </a>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -1098,11 +1108,201 @@ sources:
                         <input asp-for="Branding.ScadaSideName" class="form-control" placeholder="SCADA" />
                         <div class="form-text">Label for the side files are transferred to (e.g. SCADA, MPM SCADA).</div>
                     </div>
+                    <div class="col-md-6">
+                        <label asp-for="Branding.CorpSideName" class="form-label">Corporate / third zone name</label>
+                        <input asp-for="Branding.CorpSideName" class="form-control" placeholder="CORP" />
+                        <div class="form-text">Label for the corporate/third zone (e.g. CORP, Corporate). Used in 3-hop and multi-route UI.</div>
+                    </div>
                 </div>
                 <div class="card-footer text-end">
                     <button type="submit" class="btn btn-primary">
                         <i class="fa-solid fa-floppy-disk me-1"></i>Save Branding
                     </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    @* ══ Tab 6: Instances (multi-instance linking) ═══════════════════════════ *@
+    <div class="tab-pane fade @(activeTab == "instances" ? "show active" : "")" id="instances" role="tabpanel">
+        <form method="post" asp-page-handler="SaveInstances">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-server me-2"></i>Instance identity</div>
+                <div class="card-body row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Instances.InstanceName" class="form-label">Instance name</label>
+                        <input asp-for="Instances.InstanceName" class="form-control" placeholder="e.g. DMZ, OT" />
+                        <div class="form-text">Display name for this relay instance (e.g. DMZ, OT). Shown in UI and audit.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Instances.IncomingPath" class="form-label">Incoming path</label>
+                        <input asp-for="Instances.IncomingPath" class="form-control font-monospace" placeholder="/var/lib/n24-data-relay/uploads/transfer" />
+                        <div class="form-text">Path on this host that peers use as SCP destination. Empty = use Transfer Service watch directory.</div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(Model.Instances.InstanceId))
+                    {
+                        <div class="col-12">
+                            <label class="form-label">Instance ID</label>
+                            <input type="text" class="form-control font-monospace" value="@Model.Instances.InstanceId" readonly />
+                            <div class="form-text">Stable identifier for this instance (optional).</div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header fw-semibold"><i class="fa-solid fa-link me-2"></i>Linked peer instances</div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        For DMZ↔OT linking: set this instance’s <strong>SSH Target</strong> (tab above) to the peer’s host and destination path to the peer’s Incoming path.
+                        Same SSH as today; no new firewall rules. Test each peer to verify the path is writable before transferring files.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle" id="peersTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Host</th>
+                                    <th>Port</th>
+                                    <th>Incoming path</th>
+                                    <th>Fingerprint</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < (Model.Instances.LinkedInstances?.Count ?? 0); i++)
+                                {
+                                    var idx = i;
+                                    <tr data-peer-index="@idx">
+                                        <td><input asp-for="Instances.LinkedInstances[idx].Name" class="form-control form-control-sm" placeholder="e.g. OT" /></td>
+                                        <td><input asp-for="Instances.LinkedInstances[idx].Host" class="form-control form-control-sm font-monospace" placeholder="hostname or IP" /></td>
+                                        <td><input asp-for="Instances.LinkedInstances[idx].Port" class="form-control form-control-sm" style="width:5rem;" type="number" min="1" max="65535" /></td>
+                                        <td><input asp-for="Instances.LinkedInstances[idx].IncomingPath" class="form-control form-control-sm font-monospace" placeholder="/path/on/peer" /></td>
+                                        <td><input asp-for="Instances.LinkedInstances[idx].KnownHostFingerprint" class="form-control form-control-sm font-monospace small" placeholder="SHA256 (optional)" /></td>
+                                        <td>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm test-peer-btn" title="Test connection (writes probe file and verifies path)">
+                                                <i class="fa-solid fa-plug"></i> Test
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="small text-muted mb-0">Add a row by saving with a new peer (add Host in the last row and save).</p>
+                </div>
+                <div class="card-footer text-end">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk me-1"></i>Save Instances
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    @* ══ Tab: Routes (multi-target / 3-hop) ═══════════════════════════════════ *@
+    <div class="tab-pane fade @(activeTab == "routes" ? "show active" : "")" id="routes" role="tabpanel">
+        <div class="card mb-4">
+            <div class="card-header fw-semibold"><i class="fa-solid fa-route me-2"></i>Outbound routes</div>
+            <div class="card-body">
+                <p class="text-muted small">When multiple routes are configured, files are sent by watch path. The default single route uses <strong>SSH Target</strong> / <strong>SMB Target</strong> (Service tab). Add and edit routes below for 3-hop (e.g. OT → DMZ → CORP) or multiple send options.</p>
+                <p class="small text-muted mb-0">Current effective routes (after save):</p>
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Name</th>
+                                <th>Watch path</th>
+                                <th>Method</th>
+                                <th>Target</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var routeIdx = 0; }
+                            @foreach (var (watchPath, route) in Model.EffectiveRoutes)
+                            {
+                                var idx = routeIdx++;
+                                var target = string.Equals(route.TransferMethod, "ssh", StringComparison.OrdinalIgnoreCase)
+                                    ? $"{route.Ssh.Host}:{route.Ssh.Port} → {route.Ssh.DestinationPath}"
+                                    : route.Smb.SharePath;
+                                <tr>
+                                    <td>@idx</td>
+                                    <td>@route.Name</td>
+                                    <td class="font-monospace small">@watchPath</td>
+                                    <td>@(route.TransferMethod?.ToUpperInvariant() ?? "SSH")</td>
+                                    <td class="font-monospace small">@target</td>
+                                    <td>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm test-route-btn" data-route-index="@idx" title="Test path (write probe file and verify)">
+                                            <i class="fa-solid fa-plug"></i> Test
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" asp-page-handler="SaveRoutes">
+            <div class="card">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>Configured routes</span>
+                    <a asp-page="Settings" asp-fragment="routes" asp-route-addRoute="1" class="btn btn-outline-primary btn-sm"><i class="fa-solid fa-plus me-1"></i>Add route</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle" id="routesTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Watch path</th>
+                                    <th>Method</th>
+                                    <th>Host / Server</th>
+                                    <th>Port</th>
+                                    <th>Username</th>
+                                    <th>Destination / Share</th>
+                                    <th>Key path</th>
+                                    <th>Fingerprint</th>
+                                    <th></th>
+                                    <th>Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < (Model.Routes.RouteList?.Count ?? 0); i++)
+                                {
+                                    var r = Model.Routes.RouteList![i];
+                                    <tr class="route-row" data-method="@(r.TransferMethod ?? "ssh")">
+                                        <td><input asp-for="Routes.RouteList[i].Name" class="form-control form-control-sm" placeholder="e.g. to CORP" /></td>
+                                        <td><input asp-for="Routes.RouteList[i].SourcePath" class="form-control form-control-sm font-monospace" placeholder="/var/lib/.../incoming" /></td>
+                                        <td>
+                                            <select asp-for="Routes.RouteList[i].TransferMethod" class="form-select form-select-sm route-method-select">
+                                                <option value="ssh">SSH</option>
+                                                <option value="smb">SMB</option>
+                                            </select>
+                                        </td>
+                                        <td><input asp-for="Routes.RouteList[i].Host" class="form-control form-control-sm font-monospace route-ssh" placeholder="host" /><input asp-for="Routes.RouteList[i].SmbServer" class="form-control form-control-sm font-monospace route-smb d-none" placeholder="server" /></td>
+                                        <td><input asp-for="Routes.RouteList[i].Port" class="form-control form-control-sm route-ssh" style="width:4.5rem;" type="number" min="1" max="65535" /><span class="route-smb d-none">—</span></td>
+                                        <td><input asp-for="Routes.RouteList[i].Username" class="form-control form-control-sm route-ssh" placeholder="user" /><span class="route-smb d-none">—</span></td>
+                                        <td><input asp-for="Routes.RouteList[i].DestinationPath" class="form-control form-control-sm font-monospace route-ssh" placeholder="/remote/path" /><input asp-for="Routes.RouteList[i].SmbSharePath" class="form-control form-control-sm font-monospace route-smb d-none" placeholder="\\\\server\\share" /></td>
+                                        <td><input asp-for="Routes.RouteList[i].PrivateKeyPath" class="form-control form-control-sm font-monospace route-ssh" placeholder="optional" /></td>
+                                        <td><input asp-for="Routes.RouteList[i].KnownHostFingerprint" class="form-control form-control-sm font-monospace route-ssh" placeholder="SHA256" /></td>
+                                        <td>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm test-route-row-btn" title="Test this route (current row values)">
+                                                <i class="fa-solid fa-plug"></i> Test
+                                            </button>
+                                        </td>
+                                        <td><input type="checkbox" asp-for="Routes.RouteList[i].Remove" class="form-check-input" title="Remove this route on save" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer text-end">
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk me-1"></i>Save routes</button>
                 </div>
             </div>
         </form>
@@ -1282,6 +1482,166 @@ async function testConnection(btn) {
         if (icon) icon.className = origCls;
     }
 }
+
+    // ── Routes tab: show SSH or SMB columns by method per row ──
+    function applyRouteMethod(row) {
+        const method = (row.querySelector('select[name*=".TransferMethod"]')?.value || 'ssh').toLowerCase();
+        row.querySelectorAll('.route-ssh').forEach(el => { el.classList.toggle('d-none', method !== 'ssh'); });
+        row.querySelectorAll('.route-smb').forEach(el => { el.classList.toggle('d-none', method !== 'smb'); });
+    }
+    document.querySelectorAll('#routesTable .route-row').forEach(row => {
+        row.querySelector('select[name*=".TransferMethod"]')?.addEventListener('change', () => applyRouteMethod(row));
+        applyRouteMethod(row);
+    });
+
+    // ── Test route row (Routes tab — POST current row values to TestRouteParams) ──
+    document.querySelectorAll('.test-route-row-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const row = this.closest('tr');
+            const get = (suffix) => row.querySelector(`[name*="RouteList"][name*="${suffix}"]`)?.value ?? '';
+            const transferMethod = get('.TransferMethod');
+            const host = get('.Host');
+            const port = parseInt(row.querySelector('[name*=".Port"]')?.value, 10) || 22;
+            const username = get('.Username');
+            const destinationPath = get('.DestinationPath');
+            const knownHostFingerprint = get('.KnownHostFingerprint') || null;
+            const privateKeyPath = get('.PrivateKeyPath') || null;
+            const smbServer = get('.SmbServer') || null;
+            const smbSharePath = get('.SmbSharePath') || null;
+            const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+            const body = new URLSearchParams({
+                __RequestVerificationToken: token,
+                transferMethod: transferMethod || 'ssh',
+                host: host,
+                port: port.toString(),
+                username: username,
+                destinationPath: destinationPath,
+                knownHostFingerprint: knownHostFingerprint || '',
+                privateKeyPath: privateKeyPath || '',
+                smbServer: smbServer || '',
+                smbSharePath: smbSharePath || ''
+            });
+            this.disabled = true;
+            const icon = this.querySelector('i');
+            const origCls = icon?.className ?? '';
+            if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+            const prev = this.parentElement.querySelector('.test-result');
+            if (prev) prev.remove();
+            try {
+                const resp = await fetch('?handler=TestRouteParams', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+                const data = await resp.json();
+                const badge = document.createElement('span');
+                badge.className = 'test-result badge ms-2 ' + (data.success ? 'bg-success' : 'bg-danger');
+                badge.innerHTML = (data.success ? '<i class="fa-solid fa-check me-1"></i>' : '<i class="fa-solid fa-xmark me-1"></i>') + data.message;
+                this.insertAdjacentElement('afterend', badge);
+                setTimeout(() => badge.remove(), 8000);
+            } catch (e) {
+                const badge = document.createElement('span');
+                badge.className = 'test-result badge bg-danger ms-2';
+                badge.textContent = 'Request failed: ' + e.message;
+                this.insertAdjacentElement('afterend', badge);
+                setTimeout(() => badge.remove(), 8000);
+            } finally {
+                this.disabled = false;
+                if (icon) icon.className = origCls;
+            }
+        });
+    });
+
+    // ── Test route (Routes tab — effective routes table: test by index) ──
+    document.querySelectorAll('.test-route-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const index = parseInt(this.getAttribute('data-route-index'), 10);
+        if (isNaN(index)) return;
+        const icon = this.querySelector('i');
+        const origCls = icon ? icon.className : '';
+        this.disabled = true;
+        if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+        const prev = this.parentElement.querySelector('.test-result');
+        if (prev) prev.remove();
+        try {
+            const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+            const body = new URLSearchParams({ __RequestVerificationToken: token, index: index.toString() });
+            const resp = await fetch('?handler=TestRoute', {
+                method: 'POST',
+                headers: { 'RequestVerificationToken': token, 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+            const data = await resp.json();
+            const badge = document.createElement('span');
+            badge.className = 'test-result badge ms-2 ' + (data.success ? 'bg-success' : 'bg-danger');
+            badge.innerHTML = (data.success ? '<i class="fa-solid fa-check me-1"></i>' : '<i class="fa-solid fa-xmark me-1"></i>') + data.message;
+            this.insertAdjacentElement('afterend', badge);
+            setTimeout(() => badge.remove(), 8000);
+        } catch (e) {
+            const badge = document.createElement('span');
+            badge.className = 'test-result badge bg-danger ms-2';
+            badge.textContent = 'Request failed: ' + e.message;
+            this.insertAdjacentElement('afterend', badge);
+            setTimeout(() => badge.remove(), 8000);
+        } finally {
+            this.disabled = false;
+            if (icon) icon.className = origCls;
+        }
+    });
+});
+
+// ── Test peer connection (Instances tab — writes probe file and verifies path) ──
+document.querySelectorAll('.test-peer-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const row = this.closest('tr');
+        if (!row) return;
+        const host = row.querySelector('input[name*="Host"]')?.value?.trim();
+        const portInput = row.querySelector('input[name*="Port"]');
+        const port = portInput ? parseInt(portInput.value, 10) || 22 : 22;
+        const path = row.querySelector('input[name*="IncomingPath"]')?.value?.trim() || '';
+        const fingerprint = row.querySelector('input[name*="KnownHostFingerprint"]')?.value?.trim() || '';
+        if (!host || !path) {
+            const badge = document.createElement('span');
+            badge.className = 'test-result badge bg-warning text-dark ms-2';
+            badge.textContent = 'Enter Host and Incoming path first';
+            this.insertAdjacentElement('afterend', badge);
+            setTimeout(() => badge.remove(), 4000);
+            return;
+        }
+        const icon = this.querySelector('i');
+        const origCls = icon ? icon.className : '';
+        this.disabled = true;
+        if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+        const prev = this.parentElement.querySelector('.test-result');
+        if (prev) prev.remove();
+        try {
+            const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+            const body = new URLSearchParams({
+                __RequestVerificationToken: token,
+                host: host,
+                port: port.toString(),
+                destinationPath: path,
+                knownHostFingerprint: fingerprint
+            });
+            const resp = await fetch('?handler=TestPeer', {
+                method: 'POST',
+                headers: { 'RequestVerificationToken': token, 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+            const data = await resp.json();
+            const badge = document.createElement('span');
+            badge.className = 'test-result badge ms-2 ' + (data.success ? 'bg-success' : 'bg-danger');
+            badge.innerHTML = (data.success ? '<i class="fa-solid fa-check me-1"></i>' : '<i class="fa-solid fa-xmark me-1"></i>') + data.message;
+            this.insertAdjacentElement('afterend', badge);
+            setTimeout(() => badge.remove(), 8000);
+        } catch (e) {
+            const badge = document.createElement('span');
+            badge.className = 'test-result badge bg-danger ms-2';
+            badge.textContent = 'Request failed: ' + e.message;
+            this.insertAdjacentElement('afterend', badge);
+            setTimeout(() => badge.remove(), 8000);
+        } finally {
+            this.disabled = false;
+            if (icon) icon.className = origCls;
+        }
+    });
+});
 
 // ── Test LDAP Connection (AJAX — uses currently saved config) ──
 async function testLdapConnection(btn) {

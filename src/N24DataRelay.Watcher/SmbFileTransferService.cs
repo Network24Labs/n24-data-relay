@@ -105,6 +105,29 @@ public sealed class SmbFileTransferService : IFileTransferService
         return Task.FromResult(!string.IsNullOrWhiteSpace(path) && Directory.Exists(path));
     }
 
+    public async Task<(bool Success, string? ErrorMessage)> TestConnectionToPathAsync(CancellationToken cancellationToken = default)
+    {
+        await Task.CompletedTask.ConfigureAwait(false);
+        var path = _config.Transfer.Smb.SharePath;
+        if (string.IsNullOrWhiteSpace(path))
+            return (false, "SMB SharePath is not configured.");
+        if (!Directory.Exists(path))
+            return (false, $"Path does not exist or is not mounted: {path}");
+        try
+        {
+            var probeName = ".n24-relay-test-" + DateTime.UtcNow.Ticks;
+            var probePath = Path.Combine(path, probeName);
+            await File.WriteAllTextAsync(probePath, "n24-relay-path-test", cancellationToken).ConfigureAwait(false);
+            var content = await File.ReadAllTextAsync(probePath, cancellationToken).ConfigureAwait(false);
+            File.Delete(probePath);
+            return content == "n24-relay-path-test" ? (true, null) : (false, "Probe file verification failed.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Path not writable or readable: {ex.Message}");
+        }
+    }
+
     public Task<bool> VerifyTransferAsync(string sourceFilePath, string destinationPath, CancellationToken cancellationToken = default)
     {
         try

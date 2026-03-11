@@ -25,10 +25,32 @@
 
             @if (Model.ShowTransferOption)
             {
-                <div class="mb-3 form-check">
-                    <input type="checkbox" name="RequiresTransfer" id="RequiresTransfer" class="form-check-input" checked value="true" />
-                    <label for="RequiresTransfer" class="form-check-label">Send to transfer (@Model.ScadaSideName / OT)</label>
-                </div>
+                @if (Model.TransferRoutes.Count > 1)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Send to transfer</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            @{ var routeIndex = 0; }
+                            @foreach (var (watchPath, routeName) in Model.TransferRoutes)
+                            {
+                                var isFirst = routeIndex == 0;
+                                var rid = "Route_" + routeIndex++;
+                                <div class="form-check">
+                                    <input type="radio" name="TransferRoutePath" id="@rid" class="form-check-input" value="@watchPath" checked="@isFirst" />
+                                    <label for="@rid" class="form-check-label">@routeName</label>
+                                </div>
+                            }
+                        </div>
+                        <input type="hidden" name="RequiresTransfer" value="true" />
+                    </div>
+                }
+                else
+                {
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" name="RequiresTransfer" id="RequiresTransfer" class="form-check-input" checked value="true" />
+                        <label for="RequiresTransfer" class="form-check-label">Send to transfer (@Model.ScadaSideName / OT)</label>
+                    </div>
+                }
             }
 
             <div class="mb-3">
@@ -55,7 +77,7 @@
 </div>
 
 <!-- Results appear here after upload, stay on same page -->
-<div id="resultsSection" class="d-none" data-dmz-name="@Model.DmzSideName" data-scada-name="@Model.ScadaSideName">
+<div id="resultsSection" class="d-none" data-dmz-name="@Model.DmzSideName" data-scada-name="@Model.ScadaSideName" data-corp-name="@Model.CorpSideName">
     <h5 class="mb-3">
         <i class="fa-solid fa-list-check me-2"></i>Upload Results
         <a asp-page="/Transfers" class="btn btn-sm btn-outline-secondary ms-2 float-end">

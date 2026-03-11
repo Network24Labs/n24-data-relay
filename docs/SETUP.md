@@ -160,6 +160,33 @@ Set `EnableHttps: true` in the `Kestrel` section and provide a certificate:
 
 Or use a reverse proxy (nginx, Caddy) in front of the app on port 8080.
 
+## Multi-instance (DMZ ↔ OT) and deployment checklist
+
+When linking two relay instances (e.g. DMZ and OT) so that files can move both ways over SSH:
+
+1. **Install the app on both sides** (DMZ host and OT host). Each instance has its own config, database, and auth (no shared login).
+2. **SSH access**: Each host must run an SSH server (sshd). The transfer directory (e.g. `/var/lib/n24-data-relay/uploads/transfer`) must be writable by the SSH user that the *other* instance uses to connect. So the DMZ instance connects to the OT host and writes into the OT instance’s incoming path, and vice versa.
+3. **Configure each instance**: In **Admin → Settings → Instances**, set an instance name (e.g. "DMZ", "OT") and add the other instance as a linked peer (host, port, incoming path). Then in **SSH Target**, set the transfer target to the peer’s host and destination path to the peer’s incoming path. Use **Test connection** (on the SSH tab and per peer on the Instances tab) to verify the path is writable before transferring files.
+4. **No extra firewall rules**: Same SSH as single-instance; only the app hosts need to accept SSH from each other.
+
+**Deployment checklist (all relay hosts):**
+
+- Synchronise time (e.g. NTP or chrony) so that audit log timestamps can be correlated across instances. Clock skew between DMZ and OT makes it harder to match “send” and “receive” events in the two audit logs.
+- SSH keys and known-host fingerprints configured for the peer.
+- Incoming path exists and is writable by the SSH user.
+
+## 3-hop and multi-route (OT → DMZ → CORP)
+
+For **single-direction** 3-hop (e.g. OT → DMZ → CORP): configure each instance with one SSH target pointing to the next hop (OT → DMZ, DMZ → CORP). No code change needed.
+
+For **bidirectional** 3-hop (OT ↔ DMZ ↔ CORP) through the **same** DMZ instance, or for a CORP instance with both "Send to DMZ" and "Send to SCADA" (OT), use **multiple outbound routes**:
+
+1. **Config**: Add `Transfer.Routes` (see [CONFIGURATION.md](CONFIGURATION.md#transferroutes-multi-target--3-hop)) with one entry per direction. Each route has a distinct `SourcePath` (watch directory) and its own SSH (or SMB) target. Example: DMZ has two routes — "to CORP" (e.g. `incoming-from-ot`) and "to OT" (e.g. `incoming-from-corp`). Create those directories; the watcher will use them automatically.
+2. **Upload**: When multiple routes exist, the Upload page shows "Send to transfer" with one option per route (e.g. "Send to CORP", "Send to SCADA"), using the route names from config and branding (DmzSideName, ScadaSideName, CorpSideName).
+3. **Verification**: In **Admin → Settings → Routes**, review effective routes and use **Test** per route to verify each destination path (write probe + verify).
+
+Zone labels (DMZ, SCADA, CORP) are configurable under **Admin → Settings → Branding**.
+
 ## Development Test Target (fake-OT)
 
 ```bash

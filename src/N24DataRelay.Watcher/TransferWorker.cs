@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using N24DataRelay.Core.Interfaces;
 using N24DataRelay.Core.Models;
+using N24DataRelay.Core.Services;
 
 namespace N24DataRelay.Watcher;
 
@@ -55,30 +56,38 @@ public sealed class TransferWorker : BackgroundService
             return;
         }
 
-        var watchDir = Config.Service.WatchDirectory;
-        if (string.IsNullOrEmpty(watchDir))
+        var effectiveRoutes = TransferRouteHelper.GetEffectiveRoutes(Config);
+        if (effectiveRoutes.Count == 0)
         {
-            _logger.LogWarning("WatchDirectory is not configured.");
+            _logger.LogWarning("No effective transfer routes (WatchDirectory not configured or Routes empty).");
             return;
         }
 
-        if (!Directory.Exists(watchDir))
+        var watchPaths = effectiveRoutes.Select(r => r.WatchPath).Distinct().ToList();
+        foreach (var path in watchPaths)
         {
-            try
+            if (string.IsNullOrEmpty(path)) continue;
+            if (!Directory.Exists(path))
             {
-                Directory.CreateDirectory(watchDir);
-                _logger.LogInformation("Created watch directory: {Path}", watchDir);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Cannot create watch directory: {Path}", watchDir);
-                return;
+                try
+                {
+                    Directory.CreateDirectory(path);
+                    _logger.LogInformation("Created watch directory: {Path}", path);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Cannot create watch directory: {Path}", path);
+                    return;
+                }
             }
         }
 
         _fileWatcher.FileDetected += OnFileDetected;
         _fileWatcher.FileChanged += OnFileChanged;
-        _fileWatcher.StartWatching(watchDir, Config.Service.IncludeSubdirectories, Config.Service.FileFilter);
+        if (watchPaths.Count == 1)
+            _fileWatcher.StartWatching(watchPaths[0], Config.Service.IncludeSubdirectories, Config.Service.FileFilter);
+        else
+            _fileWatcher.StartWatching(watchPaths, Config.Service.IncludeSubdirectories, Config.Service.FileFilter);
 
         _processTimer = new Timer(
             ProcessPendingFiles,
@@ -86,9 +95,9 @@ public sealed class TransferWorker : BackgroundService
             TimeSpan.FromSeconds(Config.Service.ProcessingIntervalSeconds),
             TimeSpan.FromSeconds(Config.Service.ProcessingIntervalSeconds));
 
-        _logger.LogInformation("Transfer worker started. WatchDirectory: {Path}, TransferMethod: {Method}, FileFilter: {Filter}",
-            watchDir, Config.Service.TransferMethod, Config.Service.FileFilter);
-        _audit.Log(AuditEventTypes.ServiceStarted, "system", details: new { watchDir, transferMethod = Config.Service.TransferMethod });
+        _logger.LogInformation("Transfer worker started. Watch paths: {Count}, FileFilter: {Filter}",
+            watchPaths.Count, Config.Service.FileFilter);
+        _audit.Log(AuditEventTypes.ServiceStarted, "system", details: new { watchPathCount = watchPaths.Count, fileFilter = Config.Service.FileFilter });
 
         await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
     }
@@ -110,12 +119,17 @@ public sealed class TransferWorker : BackgroundService
         try
         {
             var fullPath = e.FullPath;
-            if (!fullPath.StartsWith(Config.Service.WatchDirectory, StringComparison.Ordinal))
+            var route = TransferRouteHelper.GetRouteForPath(Config, fullPath);
+            if (route == null)
             {
-                _logger.LogDebug("Ignoring file outside watch directory: {Path}", fullPath);
+                _logger.LogDebug("Ignoring file outside any route watch path: {Path}", fullPath);
                 return;
             }
-            var statusDir = Path.Combine(Config.Service.WatchDirectory, ".status");
+            var fullNorm = fullPath.Replace('\\', '/');
+            var watchPathForFile = TransferRouteHelper.GetEffectiveRoutes(Config)
+                .FirstOrDefault(r => fullNorm.StartsWith(r.WatchPath.Replace('\\', '/') + "/", StringComparison.Ordinal) || fullNorm == r.WatchPath.Replace('\\', '/'))
+                .WatchPath;
+            var statusDir = Path.Combine(watchPathForFile ?? Config.Service.WatchDirectory, ".status");
             if (fullPath.StartsWith(statusDir, StringComparison.Ordinal))
             {
                 _logger.LogDebug("Ignoring status file: {Path}", fullPath);
@@ -208,11 +222,19 @@ public sealed class TransferWorker : BackgroundService
                 var backoff = Config.Service.RetryBackoffMultiplier;
                 TransferResult? result = null;
 
+                var route = TransferRouteHelper.GetRouteForPath(Config, filePath);
+                if (route == null)
+                {
+                    _fileQueue.Remove(filePath);
+                    processed++;
+                    continue;
+                }
+
                 for (var attempt = 0; attempt <= retries; attempt++)
                 {
                     try
                     {
-                        var svc = _transferFactory.CreateTransferService();
+                        var svc = _transferFactory.CreateTransferServiceForRoute(route);
                         result = await svc.TransferFileAsync(filePath, null, _stoppingToken).ConfigureAwait(false);
                         result.RetryCount = attempt;
                         if (result.Success)
