@@ -26,6 +26,7 @@ jobs:
 
   deploy-mpmdmz:
     needs: build
+    if: github.repository == 'MPMaterials/N24DataRelay'
     runs-on: [self-hosted, mpmdmz]
     steps:
       - uses: actions/download-artifact@v4
