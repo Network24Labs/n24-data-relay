@@ -131,6 +131,7 @@ fi
 
 # Create required directories
 install -d -m 755 /etc/n24-data-relay
+install -d -m 700 -o "$SERVICE_USER" -g "$SERVICE_USER" /etc/n24-data-relay/keys
 install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/lib/n24-data-relay
 install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/lib/n24-data-relay/uploads
 install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/lib/n24-data-relay/uploads/transfer

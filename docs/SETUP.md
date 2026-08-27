@@ -63,6 +63,7 @@ sudo useradd --system --no-create-home --shell /usr/sbin/nologin n24-data-relay
 
 # Create required directories and set ownership
 sudo mkdir -p /etc/n24-data-relay \
+              /etc/n24-data-relay/keys \
               /var/lib/n24-data-relay/uploads/transfer \
               /var/lib/n24-data-relay/archive \
               /var/lib/n24-data-relay/temp \
@@ -74,6 +75,11 @@ sudo chown -R n24-data-relay:n24-data-relay \
 
 sudo chown root:n24-data-relay /etc/n24-data-relay
 sudo chmod 750 /etc/n24-data-relay
+
+# Data-protection key ring (ASP.NET uses this to encrypt auth cookies/tokens —
+# the app fails at first request without a writable directory here)
+sudo chown n24-data-relay:n24-data-relay /etc/n24-data-relay/keys
+sudo chmod 700 /etc/n24-data-relay/keys
 ```
 
 ## Configuration
