@@ -7,7 +7,7 @@
     <RootNamespace>N24DataRelay</RootNamespace>
     <AssemblyName>N24DataRelay</AssemblyName>
     <PackageId>N24DataRelay</PackageId>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <PackageLicenseExpression>LGPL-3.0-or-later</PackageLicenseExpression>
   </PropertyGroup>
 

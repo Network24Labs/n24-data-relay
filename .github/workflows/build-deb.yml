@@ -1,0 +1,43 @@
+name: Build .deb
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build .deb
+        run: ./deploy/packaging/build-deb.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: n24-data-relay-deb
+          path: dist/*.deb
+          retention-days: 30
+
+  deploy-mpmdmz:
+    needs: build
+    runs-on: [self-hosted, mpmdmz]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: n24-data-relay-deb
+          path: dist
+
+      - name: Install .deb
+        run: sudo apt-get install -y "$GITHUB_WORKSPACE"/dist/*.deb
+
+      - name: Restart service
+        run: sudo systemctl restart n24-data-relay
+
+      - name: Check status
+        run: sudo systemctl status n24-data-relay --no-pager
